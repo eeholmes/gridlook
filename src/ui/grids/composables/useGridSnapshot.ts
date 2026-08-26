@@ -3,6 +3,10 @@ import type { Dayjs } from "dayjs";
 import * as THREE from "three";
 import type { Ref } from "vue";
 
+import {
+  transformedLabel,
+  transformedUnits,
+} from "@/lib/data/valueTransform.ts";
 import type { TColorMap } from "@/lib/shaders/colormapShaders.ts";
 import { makeCompressedColormapLutMaterial } from "@/lib/shaders/gridShaders.ts";
 import {
@@ -304,15 +308,17 @@ export function useGridSnapshot(deps: UseGridSnapshotOptions) {
     const datasetTitle = store.datasetTitle
       ? `Dataset: ${store.datasetTitle}`
       : null;
-    const varname =
+    const rawVarname =
       store.varinfo?.attrs?.long_name ??
       store.varinfo?.attrs?.standard_name ??
       store.varnameDisplay;
+    const varname = transformedLabel(String(rawVarname), store.transformMode);
     let units = store.varinfo?.attrs?.units ? store.varinfo.attrs.units : "";
 
     if (units === "1") {
       units = "";
     }
+    units = units ? transformedUnits(String(units), store.transformMode) : "";
 
     lines.push(`Variable: ${varname}` + (units ? ` (${units})` : ""));
     const vi = store.varinfo;

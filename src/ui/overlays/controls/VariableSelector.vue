@@ -2,6 +2,10 @@
 import { storeToRefs } from "pinia";
 import { computed } from "vue";
 
+import {
+  transformedLabel,
+  transformedUnits,
+} from "@/lib/data/valueTransform.ts";
 import type { TModelInfo } from "@/lib/types/GlobeTypes.js";
 import { useGlobeControlStore } from "@/store/store.ts";
 
@@ -12,7 +16,7 @@ const props = defineProps<{
 }>();
 
 const store = useGlobeControlStore();
-const { loading } = storeToRefs(store);
+const { loading, transformMode } = storeToRefs(store);
 
 const groups = computed(() => {
   const groups: Record<string, string[]> = {};
@@ -79,15 +83,18 @@ const currentVar = computed(() => props.modelInfo.vars[model.value]);
 const currentVarAttrs = computed(() => currentVar.value?.attrs);
 
 const currentVarUnits = computed(() => {
-  return currentVarAttrs.value?.units ?? "-";
+  return transformedUnits(
+    (currentVarAttrs.value?.units as string) ?? "-",
+    transformMode.value
+  );
 });
 
 const currentVarLabel = computed(() => {
-  return (
+  const label =
     currentVarAttrs.value?.long_name ??
     currentVarAttrs.value?.standard_name ??
-    "-"
-  );
+    "-";
+  return transformedLabel(String(label), transformMode.value);
 });
 
 function getOptionLabel(varname: string): string {
@@ -136,7 +143,7 @@ function getOptionLabel(varname: string): string {
           </option>
         </select>
       </div>
-      <div :key="model" class="has-text-right">
+      <div :key="`${model}-${transformMode}`" class="has-text-right">
         <span v-word-break>
           {{ currentVarLabel }}
         </span>

@@ -4,9 +4,9 @@ Read this at the start of a new session. Cross-referenced by `CLAUDE.md`.
 
 ## Status
 
-- **Branch `main`** is up to date with `origin/main` at `789110d`. Working tree clean apart from this file and `CLAUDE.md`.
+- **Branch `main`** is up to date with `origin/main`. Working tree clean.
 - **Issues:** #1, #2 and #4 are closed. **PRs:** #3 and #6 merged.
-- **Remote branches:** only `main` should remain. See "Cleanup still owed" below.
+- **Remote branches:** `main` only. The stale `dev` and `release-please--…` branches were deleted.
 
 ## What just shipped (PR #6, issue #4)
 
@@ -28,18 +28,6 @@ Selectable data transform with `log10` as the first entry.
 
 - **Node was missing from this machine.** Installed 24.20.0 at `~/.local/opt/node-v24.20.0-linux-x64`, with `node`, `npm` and `npx` symlinked into `~/.local/bin` (already on `PATH` via `~/.bashrc`). Ran `npm install` in the repo. A non-interactive shell may not pick up `~/.bashrc`; prepend the path explicitly if `npm` is not found.
 - **`Release Please` workflow disabled** via `gh workflow disable "Release Please"` — a GitHub-side setting, so `.github/workflows/release.yml` stays byte-identical to upstream and there is nothing to merge-conflict. Eli cuts releases by hand and does **not** want this re-enabled or repaired. `Lint` stays active.
-
-## Cleanup still owed
-
-Deleting remote branches was blocked by the permission classifier, so Eli must run these (or approve them):
-
-```sh
-git push origin --delete dev
-git push origin --delete release-please--branches--main--components--gridlook
-git fetch --prune origin
-```
-
-Both are verified disposable: `dev` is 0 ahead / 99 behind `main` and fully contained in it (upstream has no `dev` branch); the release-please branch holds one bot commit, `chore(main): release 1.5.0`, on top of _pre-merge_ `main` — merging it would revert the log10 work.
 
 ## Immediate next candidates
 

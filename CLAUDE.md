@@ -27,11 +27,13 @@ Filter by test name: `npx vitest run -t "detects healpix"`
 
 Tests live in `tests/**/*.test.ts` and run in the `node` environment (see `vite.config.ts`).
 
-Node `>=24.16.0` is required (see `package.json` engines). Husky installs on `npm install`: `pre-commit` runs `lint-staged` (ESLint --fix + Prettier) then `npm run typecheck`; `commit-msg` runs Commitlint.
+Node `>=24.16.0` is required (see `package.json` engines). On this JupyterHub machine Node lives at `~/.local/opt/node-v24.20.0-linux-x64`, symlinked into `~/.local/bin` (already on `PATH` via `~/.bashrc`); a non-interactive shell may not pick that up, in which case prepend it explicitly. Husky installs on `npm install`: `pre-commit` runs `lint-staged` (ESLint --fix + Prettier) then `npm run typecheck`; `commit-msg` runs Commitlint.
 
 ## Commit Conventions
 
-Commits follow Conventional Commits and are validated by Commitlint. Only `feat` and `fix` produce CHANGELOG entries via Release Please on `main` — reserve them for user-facing changes; use `refactor`, `chore`, `docs`, `test`, `style` otherwise. Allowed scopes: `ui`, `lib`, `config`, `deps`, `docs`, `assets`.
+Commits follow Conventional Commits and are validated by Commitlint. Reserve `feat` and `fix` for user-facing changes; use `refactor`, `chore`, `docs`, `test`, `style` otherwise. Allowed scopes: `ui`, `lib`, `config`, `deps`, `docs`, `assets`.
+
+Releases on this fork are cut by hand. The inherited `Release Please` GitHub Action (`.github/workflows/release.yml`) is **disabled** here, so no CHANGELOG is generated automatically — do not re-enable it or try to repair its failures. The `Lint` workflow remains active and must pass.
 
 ## Architecture
 
@@ -75,6 +77,10 @@ Each grid family under `src/lib/grids/` follows a consistent pattern of three fi
 ### Data access
 
 `src/lib/data/ZarrDataManager.ts` is the primary orchestrator for Zarr reads (via `zarrita`) and Icechunk reads (via `icechunk-js`). Custom codecs are registered in `src/lib/data/codecs.ts`, imported for side effects from `App.vue`. Live mode (`::live=true`) is implemented in `src/lib/data/liveTimestep.ts` and `src/store/useLiveTimestep.ts` and only works over plain HTTP Zarr, not Icechunk (see `docs/live-datasets.md`).
+
+### Value transforms
+
+`src/lib/data/valueTransform.ts` holds the registry of element-wise data transforms (`linear`, `log10`). A transform is applied at exactly one point — `decodeVariableDataAndGetBounds` in `src/lib/data/variableDecoding.ts`, right after CF decoding — so data bounds, histograms, textures and hover values all derive from transformed data and the grid renderers need no changes. Because `src/lib` may not import the store, `useGridDataLoader` pushes the selected mode down via `setActiveValueTransform` before each load; it is read as a defaulted parameter, and callers that must stay linear (streamline vector components) pass `VALUE_TRANSFORMS.LINEAR` explicitly. Adding a transform means one registry entry plus its formula in `transformValue`.
 
 ### State
 

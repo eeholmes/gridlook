@@ -7,6 +7,7 @@ import {
 import { storeToRefs } from "pinia";
 import { ref, watch, computed, type Ref } from "vue";
 
+import { toValueTransform } from "@/lib/data/valueTransform.ts";
 import {
   PRESENTER_CHANNEL,
   PresenterRole,
@@ -47,6 +48,7 @@ export function usePresenterSync() {
     colormap,
     invertColormap,
     posterizeLevels,
+    transformMode,
     userBoundsLow,
     userBoundsHigh,
     landSeaMaskChoice,
@@ -112,6 +114,7 @@ export function usePresenterSync() {
       colormap: colormap.value,
       invertColormap: invertColormap.value,
       posterizeLevels: posterizeLevels.value,
+      transformMode: transformMode.value,
       userBoundsLow: userBoundsLow.value,
       userBoundsHigh: userBoundsHigh.value,
       landSeaMaskChoice: landSeaMaskChoice.value,
@@ -173,6 +176,9 @@ export function usePresenterSync() {
     }
     if (payload.posterizeLevels !== undefined) {
       posterizeLevels.value = payload.posterizeLevels;
+    }
+    if (payload.transformMode !== undefined) {
+      transformMode.value = toValueTransform(payload.transformMode);
     }
     if (payload.userBoundsLow !== undefined) {
       userBoundsLow.value = payload.userBoundsLow;
@@ -344,6 +350,7 @@ export function usePresenterSync() {
     () => colormap.value,
     () => invertColormap.value,
     () => posterizeLevels.value,
+    () => transformMode.value,
     () => userBoundsLow.value,
     () => userBoundsHigh.value,
     () => landSeaMaskChoice.value,

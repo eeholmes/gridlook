@@ -1,6 +1,7 @@
 import { onScopeDispose, ref, watch, type Ref } from "vue";
 import type * as zarr from "zarrita";
 
+import { setActiveValueTransform } from "@/lib/data/valueTransform.ts";
 import type { TSources } from "@/lib/types/GlobeTypes.ts";
 import { useGlobeControlStore } from "@/store/store.ts";
 import { useLog } from "@/ui/common/useLog.ts";
@@ -41,6 +42,11 @@ function createGetData(
     if (!datasources) {
       return;
     }
+
+    // `src/lib` cannot read the store, so hand the selected transform down to
+    // the decoding layer here, where it is guaranteed to be current for the
+    // load that is about to start.
+    setActiveValueTransform(store.transformMode);
 
     store.startLoading();
     if (state.updatingData.value) {
@@ -119,6 +125,13 @@ function registerGridDataLoaderWatches(
         store.isInitializingVariable = false;
         return;
       }
+      await getData();
+      options.updateColormap();
+    }
+  );
+  watch(
+    () => store.transformMode,
+    async () => {
       await getData();
       options.updateColormap();
     }

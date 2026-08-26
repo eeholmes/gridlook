@@ -1,5 +1,9 @@
 import { defineStore } from "pinia";
 
+import {
+  VALUE_TRANSFORMS,
+  type TValueTransform,
+} from "@/lib/data/valueTransform.ts";
 import type {
   TVectorVariablePair,
   TVectorVariableSelection,
@@ -166,6 +170,8 @@ export const useGlobeControlStore = defineStore("globeControl", {
       fullHistogram: undefined as number[] | undefined, // fixed histogram over full data range
       histogramSummary: undefined as THistogramSummary | undefined, // full-resolution (4096-bin) summary
       colormap: "viridis" as TColorMap,
+      // element-wise transform applied to the data before it is displayed
+      transformMode: VALUE_TRANSFORMS.LINEAR as TValueTransform,
       invertColormap: false,
       posterizeLevels: 0 as number,
       hideLowerBound: false,

@@ -13,9 +13,14 @@ import DimensionControl from "./controls/DimensionControl.vue";
 import LayerPanel from "./controls/LayerPanel.vue";
 import PopupDialog from "./controls/PopupDialog.vue";
 import ProjectionControls from "./controls/ProjectionControls.vue";
+import TransformControls from "./controls/TransformControls.vue";
 import VariableSelector from "./controls/VariableSelector.vue";
 
 // Import control components
+import {
+  toValueTransform,
+  valueTransformScaleLabel,
+} from "@/lib/data/valueTransform.ts";
 import {
   clamp,
   PROJECTION_TYPES,
@@ -64,6 +69,7 @@ const {
   userBoundsHigh,
   projectionCenter,
   loading,
+  transformMode,
 } = storeToRefs(store);
 
 // Bounds logic state
@@ -86,6 +92,7 @@ const {
   paramLon,
   paramBoundLow,
   paramBoundHigh,
+  paramTransform,
 } = storeToRefs(urlParameterStore);
 
 const menuCollapsed: Ref<boolean> = ref(false);
@@ -95,6 +102,19 @@ const isMobileView: Ref<boolean> = ref(false);
 const dataBounds = computed(() => {
   return varinfo.value?.bounds ?? {};
 });
+
+const colormapScaleLabel = computed(() =>
+  valueTransformScaleLabel(transformMode.value)
+);
+
+// Manual bounds are expressed in the units of the previous transform, so they
+// are meaningless once the user picks a different one.  Fall back to the data
+// bounds of the freshly transformed values instead.  Only user-driven changes
+// reset: a transform arriving from the URL comes alongside its own bounds.
+function onTransformUserSelected() {
+  store.resetUserBounds();
+  pickedBoundsMode.value = BOUND_MODES.DATA;
+}
 
 const currentBounds = computed(() => {
   if (pickedBoundsMode.value === BOUND_MODES.DATA) {
@@ -284,6 +304,9 @@ function initFromParams() {
       lon: clamp(lon, -180, 180),
     };
   }
+  if (paramTransform.value) {
+    store.transformMode = toValueTransform(paramTransform.value);
+  }
   if (paramBoundHigh.value && paramBoundLow.value) {
     const low = parseFloat(paramBoundLow.value);
     const high = parseFloat(paramBoundHigh.value);
@@ -364,11 +387,17 @@ defineExpose({
             v-model="varnameSelector"
             :model-info="modelInfo"
           />
+          <TransformControls
+            @transform-user-selected="onTransformUserSelected"
+          />
           <DimensionControl />
         </CollapsibleCard>
 
         <CollapsibleCard title="Appearance">
-          <div class="section-title">Colormap</div>
+          <div class="section-title">
+            Colormap
+            <span class="section-title-scale">{{ colormapScaleLabel }}</span>
+          </div>
           <BoundsControls
             :picked-bounds-mode="pickedBoundsMode"
             :data-bounds="dataBounds"
@@ -449,6 +478,13 @@ defineExpose({
 
 .panel-toggle {
   order: 2;
+}
+
+/* Scale annotation next to the "Colormap" heading, e.g. "log10 scale". */
+.section-title-scale {
+  text-transform: none !important;
+  font-weight: 400 !important;
+  opacity: 0.85;
 }
 
 .dataset-info-trigger {

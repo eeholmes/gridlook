@@ -1,5 +1,12 @@
 import * as zarr from "zarrita";
 
+import {
+  applyValueTransformInPlace,
+  getActiveValueTransform,
+  VALUE_TRANSFORMS,
+  type TValueTransform,
+} from "./valueTransform.ts";
+
 export type TDataBounds = {
   min: number;
   max: number;
@@ -174,10 +181,19 @@ export function decodeVariableDataAndGetBounds(
   datavar: zarr.Array<zarr.DataType, zarr.AsyncReadable>,
   data: Float32Array<ArrayBufferLike>,
   missingValue = getMissingValue(datavar),
-  fillValue = getFillValue(datavar)
+  fillValue = getFillValue(datavar),
+  valueTransform: TValueTransform = getActiveValueTransform()
 ): TDataBounds {
   decodeVariableDataInPlace(data, datavar.attrs, missingValue, fillValue);
+  applyValueTransformInPlace(data, valueTransform);
   const { min, max } = getFiniteBounds(data);
+  if (valueTransform !== VALUE_TRANSFORMS.LINEAR) {
+    // Missing and fill values have already been mapped to NaN above, and the
+    // raw sentinels no longer live in the same value space as the transformed
+    // data, so comparing against them downstream could only ever produce false
+    // positives (log10(1) === 0 would match a fill value of 0, say).
+    return { min, max, fillValue: NaN, missingValue: NaN };
+  }
   return { min, max, fillValue, missingValue };
 }
 

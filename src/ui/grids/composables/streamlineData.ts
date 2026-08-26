@@ -1,5 +1,6 @@
 import type * as zarr from "zarrita";
 
+import { VALUE_TRANSFORMS } from "@/lib/data/valueTransform.ts";
 import {
   castDataVarToFloat32,
   decodeVariableDataAndGetBounds,
@@ -54,6 +55,23 @@ function componentsAreCompatible(
   );
 }
 
+/**
+ * Streamlines integrate signed vector components, so they always stay in linear
+ * space regardless of the transform selected for the scalar field.
+ */
+function decodeComponentInLinearSpace(
+  variable: TDataVar,
+  data: Float32Array<ArrayBufferLike>
+) {
+  decodeVariableDataAndGetBounds(
+    variable,
+    data,
+    undefined,
+    undefined,
+    VALUE_TRANSFORMS.LINEAR
+  );
+}
+
 /** Load and decode two compatible vector components for the current slice. */
 export async function loadVectorComponents(options: TOptions) {
   const { pair, datasources, getDataVar } = options;
@@ -92,8 +110,8 @@ export async function loadVectorComponents(options: TOptions) {
   ]);
   const uData = castDataVarToFloat32(uValues);
   const vData = castDataVarToFloat32(vValues);
-  decodeVariableDataAndGetBounds(uVariable, uData);
-  decodeVariableDataAndGetBounds(vVariable, vData);
+  decodeComponentInLinearSpace(uVariable, uData);
+  decodeComponentInLinearSpace(vVariable, vData);
   if (
     uData.length !== options.expectedDataLength ||
     vData.length !== options.expectedDataLength

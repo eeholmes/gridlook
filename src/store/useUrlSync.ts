@@ -36,6 +36,7 @@ const GLOBE_URL_SYNC_MAP: TUrlSyncEntry[] = [
     param: URL_PARAMETERS.POSTERIZE_LEVELS,
     transform: String,
   },
+  { key: "transformMode", param: URL_PARAMETERS.TRANSFORM },
   {
     key: "hideLowerBound",
     param: URL_PARAMETERS.HIDE_LOWER_BOUND,

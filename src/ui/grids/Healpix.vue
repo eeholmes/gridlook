@@ -16,6 +16,7 @@ import { useStreamlineLayer } from "./composables/useStreamlineLayer.ts";
 
 import { buildDimensionRangesAndIndices } from "@/lib/data/dimensionHandling.ts";
 import { healpixNestedPixelIndex } from "@/lib/data/healpix.ts";
+import { applyValueTransformInPlace } from "@/lib/data/valueTransform.ts";
 import {
   castDataVarToFloat32,
   decodeVariableDataAndGetBounds,
@@ -873,6 +874,9 @@ async function fetchAndRenderData(
     missingValue,
     fillValue
   );
+  // The hover lookup keeps its own copy of the data, so it needs the same
+  // transform the rendered chunks get from decodeVariableDataAndGetBounds.
+  applyValueTransformInPlace(hoverData.value, store.transformMode);
   if (cellCoord) {
     const cellIndexMap = new Map<number, number>();
     for (let index = 0; index < cellCoord.length; index++) {

@@ -13,6 +13,7 @@ export type TPresenterStatePayload = {
   colormap?: string;
   invertColormap?: boolean;
   posterizeLevels?: number;
+  transformMode?: string;
   userBoundsLow?: number;
   userBoundsHigh?: number;
   landSeaMaskChoice?: string;

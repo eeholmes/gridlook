@@ -1,6 +1,8 @@
 import { IcechunkStore } from "icechunk-js";
 import * as zarr from "zarrita";
 
+import { virtualChunkFetchClient } from "./virtualChunkFetch.ts";
+
 const ICECHUNK_PREFIX = "icechunk+";
 
 type TIcechunkStore = zarr.AsyncReadable & Pick<IcechunkStore, "listNodes">;
@@ -39,7 +41,9 @@ export function isIcechunkStorePath(storePath: string) {
 export async function createIcechunkStore(
   storePath: string
 ): Promise<TIcechunkStore> {
-  return await IcechunkStore.open(parseStorePath(storePath).url);
+  return await IcechunkStore.open(parseStorePath(storePath).url, {
+    fetchClient: virtualChunkFetchClient,
+  });
 }
 
 export async function createListableIcechunkStore(storePath: string) {

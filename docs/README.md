@@ -27,6 +27,8 @@ model (ESM) output on native grids.
   required by live mode.
 - [CORS and data hosting](../README.md#cors--hosting-notes) — browser access
   requirements and a header check.
+- [Icechunk virtual chunks and CORS](icechunk-virtual-chunks.md) — why a
+  repository can index but not plot, and how to work around it.
 
 ## Capabilities
 

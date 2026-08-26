@@ -1,0 +1,429 @@
+<script lang="ts" setup>
+import { computed, ref } from "vue";
+
+import type { TCatalogEntry } from "@/utils/catalog.ts";
+
+const props = defineProps<{
+  title?: string;
+  datasets: TCatalogEntry[];
+}>();
+
+const emit = defineEmits<{
+  select: [entry: TCatalogEntry];
+}>();
+
+const searchQuery = ref("");
+const copiedUrl = ref<string | null>(null);
+const copyFailedUrl = ref<string | null>(null);
+const COPY_FEEDBACK_DURATION_MS = 1500;
+
+const filterFormat = ref("all");
+const filterAccess = ref("all");
+const filterLayout = ref("all");
+const filterGrid = ref("all");
+const filterConvention = ref("all");
+const filterCrs = ref("all");
+
+const uniqueFormats = computed(() =>
+  Array.from(
+    new Set(props.datasets.map((d) => d.format).filter((v): v is string => !!v))
+  ).sort()
+);
+
+const uniqueAccessTypes = computed(() =>
+  Array.from(
+    new Set(props.datasets.map((d) => d.access).filter((v): v is string => !!v))
+  ).sort()
+);
+
+const uniqueLayouts = computed(() =>
+  Array.from(
+    new Set(props.datasets.map((d) => d.layout).filter((v): v is string => !!v))
+  ).sort()
+);
+
+const uniqueGridTypes = computed(() =>
+  Array.from(
+    new Set(props.datasets.map((d) => d.grid).filter((v): v is string => !!v))
+  ).sort()
+);
+
+const uniqueConventions = computed(() =>
+  Array.from(
+    new Set(
+      props.datasets.map((d) => d.convention).filter((v): v is string => !!v)
+    )
+  ).sort()
+);
+
+const uniqueCrsTypes = computed(() =>
+  Array.from(
+    new Set(props.datasets.map((d) => d.crs).filter((v): v is string => !!v))
+  ).sort()
+);
+
+const filteredDatasets = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase();
+
+  return props.datasets.filter((entry) => {
+    if (q) {
+      const haystack = [
+        entry.title ?? "",
+        entry.url,
+        entry.format ?? "",
+        entry.access ?? "",
+        entry.layout ?? "",
+        entry.grid ?? "",
+        entry.convention ?? "",
+        entry.crs ?? "",
+        entry.description ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      if (!haystack.includes(q)) {
+        return false;
+      }
+    }
+
+    if (filterFormat.value !== "all" && entry.format !== filterFormat.value) {
+      return false;
+    }
+    if (filterAccess.value !== "all" && entry.access !== filterAccess.value) {
+      return false;
+    }
+    if (filterLayout.value !== "all" && entry.layout !== filterLayout.value) {
+      return false;
+    }
+    if (filterGrid.value !== "all" && entry.grid !== filterGrid.value) {
+      return false;
+    }
+    if (
+      filterConvention.value !== "all" &&
+      entry.convention !== filterConvention.value
+    ) {
+      return false;
+    }
+    if (filterCrs.value !== "all" && entry.crs !== filterCrs.value) {
+      return false;
+    }
+
+    return true;
+  });
+});
+
+function displayTitle(entry: TCatalogEntry): string {
+  return entry.title ?? entry.url;
+}
+
+function select(entry: TCatalogEntry) {
+  emit("select", entry);
+}
+
+function cleanCatalogUrl(url: string): string {
+  const base = url.split("::")[0];
+  return base.replace(/^icechunk\+/, "");
+}
+
+async function copyUrl(url: string) {
+  try {
+    await navigator.clipboard.writeText(cleanCatalogUrl(url));
+    copyFailedUrl.value = null;
+    copiedUrl.value = url;
+    setTimeout(() => {
+      if (copiedUrl.value === url) {
+        copiedUrl.value = null;
+      }
+    }, COPY_FEEDBACK_DURATION_MS);
+  } catch {
+    copiedUrl.value = null;
+    copyFailedUrl.value = url;
+    setTimeout(() => {
+      if (copyFailedUrl.value === url) {
+        copyFailedUrl.value = null;
+      }
+    }, COPY_FEEDBACK_DURATION_MS);
+  }
+}
+</script>
+
+<template>
+  <nav class="catalog-panel mt-4 pt-2">
+    <h2 class="catalog-title">
+      {{ title ?? "Dataset Catalog" }}
+    </h2>
+    <div class="is-flex-direction-column my-3 w-100">
+      <div class="control has-icons-left mb-2">
+        <input
+          v-model="searchQuery"
+          class="input is-small"
+          type="text"
+          placeholder="Search datasets…"
+        />
+        <span class="icon is-left is-small">
+          <i class="fa-solid fa-magnifying-glass"></i>
+        </span>
+      </div>
+      <div
+        class="is-flex is-align-items-center is-justify-content-space-between w-100 catalog-filters"
+      >
+        <span class="is-size-7 has-text-grey">
+          {{ filteredDatasets.length }} /
+          {{ datasets.length }}
+          dataset{{ datasets.length !== 1 ? "s" : "" }}
+        </span>
+        <div class="field is-grouped is-align-items-center mb-0">
+          <div v-if="uniqueFormats.length > 0" class="control">
+            <div class="select is-small">
+              <select v-model="filterFormat" title="Filter by format">
+                <option value="all">Format: All</option>
+                <option v-for="v in uniqueFormats" :key="v" :value="v">
+                  {{ v }}
+                </option>
+              </select>
+            </div>
+          </div>
+          <div v-if="uniqueAccessTypes.length > 0" class="control">
+            <div class="select is-small">
+              <select v-model="filterAccess" title="Filter by access">
+                <option value="all">Access: All</option>
+                <option v-for="v in uniqueAccessTypes" :key="v" :value="v">
+                  {{ v }}
+                </option>
+              </select>
+            </div>
+          </div>
+          <div v-if="uniqueLayouts.length > 0" class="control">
+            <div class="select is-small">
+              <select v-model="filterLayout" title="Filter by layout">
+                <option value="all">Layout: All</option>
+                <option v-for="v in uniqueLayouts" :key="v" :value="v">
+                  {{ v }}
+                </option>
+              </select>
+            </div>
+          </div>
+          <div v-if="uniqueGridTypes.length > 0" class="control">
+            <div class="select is-small">
+              <select v-model="filterGrid" title="Filter by grid type">
+                <option value="all">Grid: All</option>
+                <option v-for="v in uniqueGridTypes" :key="v" :value="v">
+                  {{ v }}
+                </option>
+              </select>
+            </div>
+          </div>
+          <div v-if="uniqueConventions.length > 0" class="control">
+            <div class="select is-small">
+              <select v-model="filterConvention" title="Filter by convention">
+                <option value="all">Convention: All</option>
+                <option v-for="v in uniqueConventions" :key="v" :value="v">
+                  {{ v }}
+                </option>
+              </select>
+            </div>
+          </div>
+          <div v-if="uniqueCrsTypes.length > 0" class="control">
+            <div class="select is-small">
+              <select v-model="filterCrs" title="Filter by CRS">
+                <option value="all">CRS: All</option>
+                <option v-for="v in uniqueCrsTypes" :key="v" :value="v">
+                  {{ v }}
+                </option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="catalog-entries">
+      <p v-if="filteredDatasets.length === 0" class="has-text-grey is-size-7">
+        No datasets match your search.
+      </p>
+      <div
+        v-for="(entry, i) in filteredDatasets"
+        :key="entry.url + '-' + i"
+        class="catalog-entry panel-block"
+      >
+        <button
+          class="catalog-entry-select"
+          type="button"
+          @click="select(entry)"
+        >
+          <div class="catalog-entry-content">
+            <div class="catalog-entry-header">
+              <div class="catalog-entry-main">
+                <span class="icon is-small has-text-link">
+                  <i class="fa-solid fa-database"></i>
+                </span>
+                <div class="catalog-entry-text">
+                  <strong
+                    class="catalog-entry-title"
+                    :title="displayTitle(entry)"
+                  >
+                    {{ displayTitle(entry) }}
+                  </strong>
+                </div>
+              </div>
+            </div>
+            <p v-if="entry.description" class="help has-text-grey mt-1 mb-0">
+              {{ entry.description }}
+            </p>
+          </div>
+        </button>
+        <div class="catalog-entry-tags-row">
+          <div class="catalog-entry-tags">
+            <span v-if="entry.format" class="tag is-info is-light is-small">
+              {{ entry.format }}
+            </span>
+            <span v-if="entry.access" class="tag is-warning is-light is-small">
+              {{ entry.access }}
+            </span>
+            <span v-if="entry.layout" class="tag is-light is-small">
+              {{ entry.layout }}
+            </span>
+            <span v-if="entry.grid" class="tag is-link is-light is-small">
+              {{ entry.grid }}
+            </span>
+            <span
+              v-if="entry.convention"
+              class="tag is-primary is-light is-small"
+            >
+              {{ entry.convention }}
+            </span>
+            <span v-if="entry.crs" class="tag is-success is-light is-small">
+              {{ entry.crs }}
+            </span>
+            <button
+              type="button"
+              class="tag is-light is-small catalog-copy-tag"
+              :aria-label="`Copy URL for ${displayTitle(entry)}`"
+              @click.stop.prevent="copyUrl(entry.url)"
+            >
+              {{
+                copiedUrl === entry.url
+                  ? "Copied URL"
+                  : copyFailedUrl === entry.url
+                    ? "Copy failed"
+                    : "Copy URL"
+              }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+</template>
+
+<style lang="scss" scoped>
+.catalog-title {
+  color: var(--bulma-label-color);
+  display: block;
+  font-size: var(--bulma-size-normal);
+  font-weight: var(--bulma-weight-semibold);
+}
+.catalog-panel {
+  margin-top: 1rem;
+  max-height: 400px;
+}
+
+.catalog-entries {
+  max-height: 45vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.catalog-entry {
+  display: flex !important;
+  flex-direction: column;
+  width: 100%;
+  border-bottom: 1px solid var(--bulma-border);
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.catalog-entry-select {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  &:hover {
+    background-color: var(--bulma-link-light);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--bulma-link);
+    outline-offset: 2px;
+  }
+}
+
+.catalog-entry-content {
+  width: 100%;
+  min-width: 0;
+}
+
+.catalog-entry-header {
+  display: flex;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.catalog-entry-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.catalog-entry-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.catalog-entry-tags-row {
+  margin-top: 0.35rem;
+}
+
+.catalog-entry-tags {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.catalog-copy-tag {
+  cursor: pointer;
+  border: none;
+  &:hover {
+    background-color: var(--bulma-link-light);
+  }
+  &:active {
+    filter: brightness(0.95);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--bulma-link);
+    outline-offset: 2px;
+  }
+}
+
+.catalog-filters {
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  row-gap: 0.25rem;
+}
+
+.catalog-entry-title {
+  display: block;
+  min-width: 0;
+  white-space: normal;
+  word-break: break-word;
+}
+</style>

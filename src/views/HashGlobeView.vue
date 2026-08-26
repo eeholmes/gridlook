@@ -15,10 +15,11 @@ import type { TURLParameterValues } from "@/utils/urlParams.ts";
 
 type TParams = Partial<Record<TURLParameterValues, string>>;
 
+// Keep in sync with the first entry of DEFAULT_CATALOG.
 const DEFAULT_DATASET =
-  "https://storage.googleapis.com/cmip6/CMIP6/ScenarioMIP/AWI/AWI-CM-1-1-MR/ssp585/r1i1p1f1/day/sfcWind/gn/v20190529/";
+  "https://ogs-arco-ocean.s3.eu-south-1.amazonaws.com/dataset/tres=1d/res=0p25/levels=10/";
 
-const DEFAULT_CATALOG = "static/catalog.json";
+const DEFAULT_CATALOG = "static/catalog-extended.json";
 
 const defaultSrc = ref(DEFAULT_DATASET);
 const src = ref(DEFAULT_DATASET);

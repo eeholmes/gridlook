@@ -1,6 +1,8 @@
 <script lang="ts" setup>
 import { computed, ref } from "vue";
 
+import CatalogPanelExtended from "./CatalogPanelExtended.vue";
+
 import type { TCatalogEntry } from "@/utils/catalog.ts";
 
 const props = defineProps<{
@@ -11,6 +13,12 @@ const props = defineProps<{
 const emit = defineEmits<{
   select: [entry: TCatalogEntry];
 }>();
+
+const hasExtendedFields = computed(() =>
+  props.datasets.some(
+    (d) => d.format || d.access || d.layout || d.grid || d.convention || d.crs
+  )
+);
 
 const searchQuery = ref("");
 
@@ -54,7 +62,13 @@ function select(entry: TCatalogEntry) {
 </script>
 
 <template>
-  <nav class="catalog-panel mt-4 pt-2">
+  <CatalogPanelExtended
+    v-if="hasExtendedFields"
+    :title="title"
+    :datasets="datasets"
+    @select="(entry) => emit('select', entry)"
+  />
+  <nav v-else class="catalog-panel mt-4 pt-2">
     <h2 class="catalog-title">
       {{ title ?? "Dataset Catalog" }}
     </h2>

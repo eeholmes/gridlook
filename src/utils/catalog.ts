@@ -5,6 +5,12 @@ export type TCatalogEntry = {
   title?: string;
   tag?: string;
   description?: string;
+  format?: string;
+  access?: string;
+  layout?: string;
+  grid?: string;
+  convention?: string | null;
+  crs?: string;
 };
 
 export type TCatalog = {

@@ -27,7 +27,7 @@ Filter by test name: `npx vitest run -t "detects healpix"`
 
 Tests live in `tests/**/*.test.ts` and run in the `node` environment (see `vite.config.ts`).
 
-Node `>=24.16.0` is required (see `package.json` engines). On this JupyterHub machine Node lives at `~/.local/opt/node-v24.20.0-linux-x64`, symlinked into `~/.local/bin` (already on `PATH` via `~/.bashrc`); a non-interactive shell may not pick that up, in which case prepend it explicitly. Husky installs on `npm install`: `pre-commit` runs `lint-staged` (ESLint --fix + Prettier) then `npm run typecheck`; `commit-msg` runs Commitlint.
+Node `>=24.16.0` is required (see `package.json` engines). On this JupyterHub machine Node lives at `~/.local/opt/node-v24.20.0-linux-x64`, symlinked into `~/.local/bin`, which `~/.bashrc` prepends to `PATH`. The home directory persists across hubs, so a "new machine" almost never needs a reinstall — if `npm` appears missing, suspect the shell before reinstalling anything. Login shells (what the JupyterHub terminal spawns) read `~/.bash_profile`, not `~/.bashrc`, so a `~/.bash_profile` that sources `~/.bashrc` is in place to bridge that. Non-interactive tool shells may still miss it, in which case prepend `export PATH="$HOME/.local/opt/node-v24.20.0-linux-x64/bin:$PATH"` explicitly. Husky installs on `npm install`: `pre-commit` runs `lint-staged` (ESLint --fix + Prettier) then `npm run typecheck`; `commit-msg` runs Commitlint.
 
 ## Commit Conventions
 

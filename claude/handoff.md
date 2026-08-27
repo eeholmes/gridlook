@@ -1,33 +1,36 @@
-# Handoff — 2026-08-26 (session 3)
+# Handoff — 2026-08-27 (session 4)
 
 Read this at the start of a new session. Cross-referenced by `CLAUDE.md`.
 
 ## Status
 
-- **Branch `main`** is up to date with `origin/main`. Working tree clean.
-- **Issues:** #1, #2 and #4 are closed. **PRs:** #3 and #6 merged.
-- **Remote branches:** `main` only. The stale `dev` and `release-please--…` branches were deleted.
+- **Branch `main`** is at `fae9360`, in sync with `origin/main`. Working tree clean.
+- **Issues:** #1, #2, #4 and #7 are closed. **PRs:** #3, #6 and #8 merged.
+- **Remote branches:** `main` only.
 
-## What just shipped (PR #6, issue #4)
+## What just shipped (PR #8, issue #7)
 
-Selectable data transform with `log10` as the first entry.
+A readable error when an Icechunk repository's **virtual chunks** are blocked by CORS.
 
-- New **Transform** dropdown in the _Variable_ card (`src/ui/overlays/controls/TransformControls.vue`) — `None (linear)` / `log10`. A dropdown rather than a checkbox so further transforms are additive.
-- New `src/lib/data/valueTransform.ts` — the registry, in-place application, and label/unit formatting. Adding a transform is one registry entry plus its formula in `transformValue`.
-- Applied at **one** point, `decodeVariableDataAndGetBounds`, right after CF decoding. Bounds, histogram, colorbar, texture and hover all derive from transformed data, so **none of the seven grid renderers changed** except `Healpix.vue`, which keeps a separate copy of the data for hover.
-- `src/lib` cannot import the store, so `useGridDataLoader` pushes the mode down with `setActiveValueTransform` before each load; it is read as a _defaulted parameter_, and streamline vector components opt out with an explicit `VALUE_TRANSFORMS.LINEAR`.
-- Readouts state the transform: variable line reads `log10(name) / log10(units)`, the Colormap heading is annotated `log10 scale`, snapshot annotations match. Zero and negative values become NaN and render as missing data.
-- Carried in the URL as `::transform=log10`; synced to the presenter window. Changing it from the dropdown drops manual colormap bounds (they were in the old units).
-- 16 new tests in `tests/unit/lib/data/valueTransform.test.ts` and `variableDecodingTransform.test.ts`.
+- **The reported symptom:** `https://data.source.coop/fish-pace/coastwatch/ocean-heat/na/` failed with a bare "Could not fetch data / Failed to fetch".
+- **The actual cause:** nothing in the data path. The repository opens fine and every variable indexes. It stores only byte-range references into NetCDF files on `coastwatch.noaa.gov`, which serves those bytes happily to `curl` but sends no `Access-Control-Allow-Origin` for any origin. The coordinates were written as `loadable_variables`, so they are materialised on source.coop (which does send CORS headers) and load — which is why the dataset lists its variables and only fails on plot.
+- **New `src/lib/data/virtualChunkFetch.ts`** — a `FetchClient` that leaves the request completely untouched (icechunk-js still builds the `Range` header and follows redirects) and only rewrites the opaque `TypeError: Failed to fetch` into a message naming the host and the likely cause. Aborts and same-origin failures pass through unchanged.
+- **New `docs/icechunk-virtual-chunks.md`** — why a repository can index but not plot, a `curl` recipe to test a host, and the three workarounds.
+- 8 new tests in `tests/unit/lib/data/virtualChunkFetch.test.ts`.
 
-**Merge surface on upstream-owned files:** +126/−11 across 13 files, almost all single-line additions to existing lists. `variableDecoding.ts` +18/−1, `Controls.vue` +38/−1, `VariableSelector.vue` +19/−6, `streamlineData.ts` +22/−2, `useGridDataLoader.ts` +13, `useGridSnapshot.ts` +8/−1, `Healpix.vue` +4, `usePresenterSync.ts` +7, `store.ts` +6, `paramStore.ts` +2, `presenterSync.ts` / `useUrlSync.ts` / `urlParams.ts` +1 each.
+**Merge surface on upstream-owned files: 7 lines.** `src/lib/data/icechunkStore.ts` +5/−1 (pass the fetch client to `IcechunkStore.open`) and `docs/README.md` +2. Everything else is new files.
 
-**Known cosmetic issue:** a shared `::transform=log10` link fetches the slice twice — once linear on mount, then again when `Controls.vue` applies URL params. Fixing it properly means applying the param earlier in `HashGlobeView`, which breaks the convention every other param follows. Left as-is; chunks are HTTP-cached on the second pass.
+**This is diagnosis, not a workaround.** The dataset still needs a CORS-unblocking browser extension to render; gridlook does not proxy. Verified out of band that NOAA serves the exact chunk range (`206`, correct `Content-Range`) to a fully browser-shaped cross-site request and still sends no `Access-Control-Allow-Origin`, so the missing header really is the only blocker. The custom-header hypothesis in issue #7 (icechunk PR #2255) cannot help — `User-Agent` is a forbidden header in browsers.
+
+## Two lessons from this session worth carrying forward
+
+- **The "Allow CORS" extension toggle reads backwards.** A switch showing `ON` means _CORS blocking is on_; it must be clicked to `OFF` to permit cross-origin reads. Eli lost real time to this while the extension reported "ON". This is now written into `CLAUDE.md` under "Data access" — **raise it first** whenever an extension is reportedly installed and enabled yet data still will not load, together with a hard reload (a cached `206` without CORS headers replays from cache without the extension ever running). Only after both come back clean is it worth looking inside gridlook.
+- **Do not ship code for an unconfirmed hypothesis.** Mid-session I added a main-thread retry to `src/lib/grids/gridDataWorkerClient.ts` (+46) on the theory that the extension might not cover Web Worker requests. The real causes were the unhelpful message plus the toggle, so that commit was dropped before the PR. Diagnose, confirm with Eli, _then_ write the fix — extra code paths no confirmed problem requires are cost, not insurance, and they enlarge the upstream merge surface for nothing.
 
 ## Environment changes made this session
 
-- **Node was missing from this machine.** Installed 24.20.0 at `~/.local/opt/node-v24.20.0-linux-x64`, with `node`, `npm` and `npx` symlinked into `~/.local/bin` (already on `PATH` via `~/.bashrc`). Ran `npm install` in the repo. A non-interactive shell may not pick up `~/.bashrc`; prepend the path explicitly if `npm` is not found.
-- **`Release Please` workflow disabled** via `gh workflow disable "Release Please"` — a GitHub-side setting, so `.github/workflows/release.yml` stays byte-identical to upstream and there is nothing to merge-conflict. Eli cuts releases by hand and does **not** want this re-enabled or repaired. `Lint` stays active.
+- **Node was already installed; the shell was the problem.** `~/.local/opt/node-v24.20.0-linux-x64` and the `~/.local/bin` symlinks survive across hubs because the home directory is persistent. What was missing was `~/.bash_profile` — a bash **login** shell (which is what the JupyterHub terminal spawns) reads `~/.bash_profile`/`~/.profile`, never `~/.bashrc`, so the `PATH` line in `~/.bashrc` never applied and `npm` looked uninstalled. Created `~/.bash_profile` sourcing `~/.bashrc`; verified in a fresh login shell. **If `npm` appears missing on a new hub, check this before reinstalling anything.**
+- Tool shells still start without `~/.local/bin` on `PATH`; prepend `export PATH="$HOME/.local/opt/node-v24.20.0-linux-x64/bin:$PATH"` in Bash calls. With that set, the Husky hooks run normally — earlier sessions had to bypass them with `-c core.hooksPath=/dev/null`, which is no longer necessary.
 
 ## Immediate next candidates
 
@@ -35,15 +38,16 @@ From `claude/comparison.md`, the remaining **High** priority themes:
 
 | #   | Theme                                          | comparison.md section | Rough scope                                                                                                                                                     |
 | --- | ---------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Icechunk-js store backend                      | §1                    | New store type via `icechunk+…` URLs; upstream already has `src/lib/data/icechunkStore.ts` — comparison may collapse                                            |
 | 2   | Nested-group / root-group handling             | §2                    | Deep-group Icechunk URLs, downsampled sibling groups; touches `ZarrDataManager` and `sourceIndexing`                                                            |
 | 3   | Extra Zarr codecs (fletcher32, blosc2, pcodec) | §3                    | Upstream has `codecs.ts` and `fletcher32.ts` — check codec set, add missing decoders                                                                            |
 | 4   | Zarr v3 metadata edge cases                    | §4                    | `_ARRAY_DIMENSIONS` fallback, object-style `data_type`, unconsolidated metadata                                                                                 |
 | 10  | Load-time & interaction performance            | §10                   | **Subtle** — upstream has since moved to worker-based grid pipeline (`src/lib/grids/*.worker.ts`); some fork perf tricks may now be obsolete or need re-shaping |
 
+Theme #1 (Icechunk-js store backend) is effectively **resolved** — upstream's `src/lib/data/icechunkStore.ts` works, and PR #8 confirmed it opens format-v2 repositories and indexes them correctly. Re-read §1 before assuming anything is still outstanding there.
+
 Ask Eli which one first. Do **not** propose porting all of them — Eli chooses per-theme.
 
-Also open: further data transforms beyond `log10` (issue #4 noted more would follow). The registry is ready for them.
+Also open: further data transforms beyond `log10` (issue #4 noted more would follow). The registry in `src/lib/data/valueTransform.ts` is ready for them.
 
 ## Working principles
 
@@ -51,7 +55,7 @@ Also open: further data transforms beyond `log10` (issue #4 noted more would fol
 - This repo is a fork of `d70-t/gridlook`. Fork-only work does not target upstream.
 - Local dev is behind JupyterHub — dev URL uses `/proxy/absolute/3000/` (not `/proxy/3000/`). `npm run dev` handles this automatically via `vite.jupyter.config.ts`.
 - Verify with `npm run lint-ci && npm run typecheck && npm run test && npm run build` before every commit.
-- Follow Conventional Commits (Commitlint enforces them). No changelog is generated — Release Please is off.
+- Follow Conventional Commits (Commitlint enforces them). No changelog is generated — Release Please is off and stays off.
 - Delegate broad research (multi-PR reads, cross-file audits) to Explore or general-purpose agents so the main context stays lean.
 
 ## Environment quirks worth remembering
@@ -59,7 +63,7 @@ Also open: further data transforms beyond `log10` (issue #4 noted more would fol
 - `strictPort: true` is set for dev — port 3000 conflicts fail loudly. Kill stray processes with `pkill -9 -f "vite --port"`.
 - Do not launch background dev servers from tool calls. Vite processes started that way persist across turns and block subsequent runs.
 - HMR through the proxy may or may not connect cleanly. Manual refresh works either way.
-- Remote branch deletion and repo-settings writes via `gh api` are blocked by the permission classifier — hand those commands to Eli instead of retrying.
+- Remote branch deletion and repo-settings writes via `gh api` are blocked by the permission classifier — hand those commands to Eli instead of retrying. (`gh pr merge --delete-branch` does work.)
 
 ## How to resume
 

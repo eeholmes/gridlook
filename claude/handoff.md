@@ -115,6 +115,14 @@ Still open from earlier sessions, in `claude/comparison.md`: theme #2
   generated; use it again rather than hand-rolling bytes.
 - An `upstream` remote (`d70-t/gridlook`) is configured. `main` is 14+ commits
   ahead of it and 0 behind.
+- **Because of that remote, always pass `--repo eeholmes/gridlook` to `gh`.**
+  With two remotes, `gh` has to pick a default, and it can resolve to
+  `d70-t/gridlook` — which means a bare `gh issue view 5` or `gh issue comment 5`
+  silently reads and writes the **maintainers'** repo. That happened in session
+  5: a summary comment meant for this fork's issue #5 was posted on
+  d70-t/gridlook#5 and had to be deleted. `gh repo set-default eeholmes/gridlook`
+  is now configured, but the explicit `--repo` flag is the reliable guard,
+  especially for anything that writes.
 - `strictPort: true` for dev — kill strays with `pkill -9 -f "vite --port"`.
 - Do not launch background dev servers from tool calls; they persist across
   turns and block later runs.

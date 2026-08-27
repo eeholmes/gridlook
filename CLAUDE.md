@@ -35,6 +35,12 @@ Commits follow Conventional Commits and are validated by Commitlint. Reserve `fe
 
 Releases on this fork are cut by hand. The inherited `Release Please` GitHub Action (`.github/workflows/release.yml`) is **disabled** here, so no CHANGELOG is generated automatically — do not re-enable it or try to repair its failures. The `Lint` workflow remains active and must pass.
 
+### Remotes, and always passing `--repo` to `gh`
+
+The checkout has two remotes: `origin` (`eeholmes/gridlook`) and `upstream` (`d70-t/gridlook`). Because a second remote exists, `gh` has to choose a default repository and can resolve to **upstream** — so a bare `gh issue view 5` or `gh issue comment 5` silently reads and writes the maintainers' repo rather than this fork. That has already happened once: a comment meant for this fork's issue #5 was posted on `d70-t/gridlook#5` and had to be deleted. **Pass `--repo eeholmes/gridlook` on every `gh` invocation**, and treat it as mandatory for anything that writes — commenting, closing, or opening issues and pull requests. `gh repo set-default` is configured but is per-clone and will not survive a fresh clone.
+
+Work aimed at upstream is branched from `upstream/main`, never from this fork's `main`, which is 20+ commits ahead of it.
+
 ## Architecture
 
 ### Layered directory structure with enforced boundaries

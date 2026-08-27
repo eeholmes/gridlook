@@ -56,7 +56,7 @@ Three properties worth keeping:
 What this design deliberately does **not** do is hit real datasets. Network
 tests would make CI flaky and would conflate codec bugs with CORS and host
 outages — the failure mode that ate PR #8. Real URLs belong in the manual
-checklist in §6 instead.
+checklist in §7 instead.
 
 ---
 
@@ -302,7 +302,50 @@ precedent applies: a separate optional package, lazily loaded.
 
 ---
 
-## 6. Manual checklist for real datasets
+## 6. Packaging the error-message change as an upstream PR
+
+Upstream's testing philosophy is not ambiguous, so this is settled rather than
+a judgement call:
+
+- `.github/workflows/lint.yml` runs `lint-ci`, `typecheck`, **`npm run test`**
+  and `build` on every push and pull request. Tests gate the merge.
+- Upstream carries 20 test files, and they are not limited to pure geometry —
+  `tests/unit/ui/grids/composables/useGridDataLoader.test.ts` and
+  `tests/unit/utils/toast.test.ts` cover exactly the composable-and-toast layer
+  this change touches.
+- Of the last twelve merged PRs, every substantive one changed `tests/`. The
+  four that did not are two Release Please release commits, a `docs:` PR and a
+  rebase.
+
+So the PR should include tests. Two refinements worth making first:
+
+**Send only `codecErrors.test.ts`.** The survey tests from §2
+(`codecSupport`, `dataTypeSupport`, `pcodecSupport`) assert _gaps_ — they
+encode a list of problems the maintainers have not yet agreed are problems, and
+dropping that into a PR about error messages invites a scope argument. They
+belong in the fork, or attached as evidence to an issue. The error-message PR
+should test only what it adds.
+
+**Inline the fixtures and the PR touches no config at all.**
+`codecErrors.test.ts` uses `base64Bytes`, `v2ArrayMetadata` and `v2Store` from
+`tests/helpers/zarrStoreFixtures.ts`, and that shared helper is the only reason
+this branch edits `eslint.config.js` (§8). Upstream's own
+`tests/unit/lib/data/logBins.test.ts` already builds a synthetic v2 store
+inline as a `Map`, with the same computed-key trick for snake_case metadata
+names — so inlining is both about 25 lines and a closer match to house style.
+That removes the `tests/helpers/` directory and the `boundaries/ignore` line
+from the PR, leaving it as one new source file, one new test file, and 13 lines
+across two files upstream owns.
+
+One thing that needs no attention: upstream's `useGridDataLoader.test.ts`
+asserts `logError` was called with `"Could not fetch data"`. Because the
+explanation is applied inside `useLog` rather than at the call sites, that
+assertion is untouched and still passes — which is a point in favour of the
+hook location if a reviewer asks.
+
+---
+
+## 7. Manual checklist for real datasets
 
 Deliberately not in CI. Run by hand when touching this area:
 
@@ -317,7 +360,7 @@ suspecting the network — §3's last bullet explains why the two look alike.
 
 ---
 
-## 7. Note on the one file this branch touches that upstream owns
+## 8. Note on the one file this branch touches that upstream owns
 
 `eslint.config.js`, one line: `"tests/**"` added to `boundaries/ignore`, so the
 shared fixture helper under `tests/helpers/` does not trip

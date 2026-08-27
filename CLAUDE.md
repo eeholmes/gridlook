@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Before starting new work, read [`claude/handoff.md`](./claude/handoff.md).** It carries the most recent session's state, what shipped, and the shortlist for next steps. The full archaeology of the `eeholmes/gridlook-xl` fork lives in [`claude/comparison.md`](./claude/comparison.md).
+> **Before starting new work, read [`claude/handoff.md`](./claude/handoff.md).** It carries the most recent session's state, what shipped, and the shortlist for next steps. The full archaeology of the `eeholmes/gridlook-xl` fork lives in [`claude/comparison.md`](./claude/comparison.md), and the surveyed state of Zarr codec and data-type support in [`claude/codec-support.md`](./claude/codec-support.md).
 
 ## Project Overview
 
@@ -25,7 +25,7 @@ npm run test:watch     # vitest in watch mode
 Run a single test file: `npx vitest run tests/unit/lib/data/gridTypeDetector.test.ts`
 Filter by test name: `npx vitest run -t "detects healpix"`
 
-Tests live in `tests/**/*.test.ts` and run in the `node` environment (see `vite.config.ts`).
+Tests live in `tests/**/*.test.ts` and run in the `node` environment (see `vite.config.ts`). Shared, non-test helpers go in `tests/helpers/`; `boundaries/ignore` in `eslint.config.js` covers `tests/**` so they do not trip `boundaries/no-unknown-files`. Zarr-reading tests build a synthetic in-memory store as a `Map` and open it with `open.v2`/`open.v3` rather than hitting the network — see `tests/unit/lib/data/logBins.test.ts` for the smallest example. Zarr metadata keys are snake_case, which the `camelcase` rule rejects, so write them as computed keys from a constant map.
 
 Node `>=24.16.0` is required (see `package.json` engines). On this JupyterHub machine Node lives at `~/.local/opt/node-v24.20.0-linux-x64`, symlinked into `~/.local/bin`, which `~/.bashrc` prepends to `PATH`. The home directory persists across hubs, so a "new machine" almost never needs a reinstall — if `npm` appears missing, suspect the shell before reinstalling anything. Login shells (what the JupyterHub terminal spawns) read `~/.bash_profile`, not `~/.bashrc`, so a `~/.bash_profile` that sources `~/.bashrc` is in place to bridge that. Non-interactive tool shells may still miss it, in which case prepend `export PATH="$HOME/.local/opt/node-v24.20.0-linux-x64/bin:$PATH"` explicitly. Husky installs on `npm install`: `pre-commit` runs `lint-staged` (ESLint --fix + Prettier) then `npm run typecheck`; `commit-msg` runs Commitlint.
 
@@ -81,6 +81,16 @@ Each grid family under `src/lib/grids/` follows a consistent pattern of three fi
 Icechunk repositories may hold _virtual_ chunks: the repository stores only byte-range references into the original NetCDF/HDF5 files, which stay on whichever host published them. Reading one is a cross-origin range request, and plenty of archives (`coastwatch.noaa.gov`, for one) serve those bytes happily to `curl` while sending no `Access-Control-Allow-Origin`, so the browser discards the response and `fetch` rejects with a bare `TypeError: Failed to fetch`. The tell is a dataset that indexes and lists its variables but fails on plot, often with the coordinates loading fine because they were written as `loadable_variables` and are therefore materialised. `src/lib/data/virtualChunkFetch.ts` rewrites that opaque rejection into a message naming the host; see `docs/icechunk-virtual-chunks.md`.
 
 The reader-side workaround is a CORS-unblocking browser extension (gridlook does not proxy). **Warn about the toggle before anything else:** in extensions of the "Allow CORS" family the switch reading `ON` means _CORS blocking is on_ — it has to be clicked to `OFF` to actually permit cross-origin reads. This is backwards from what the label suggests and has already cost debugging time once. If a reader says the extension is installed and enabled yet the data still will not load, check the toggle direction and force a hard reload (a cached `206` without CORS headers replays from cache without the extension ever running) before investigating anything in gridlook.
+
+### Codecs and data types
+
+Codec support comes from three stacked layers: `numcodecs.js` supplies the compiled compressors (blosc, lz4, zstd, gzip, zlib and nothing else), `zarrita` wires those in and adds the pure-JS v3 codecs, and `src/lib/data/codecs.ts` adds `fletcher32`, `gribscan.rawgrib`, `log_bins` and `pcodec`. Adding a codec means a new file shaped like `fletcher32.ts` plus one `registry.set` line — never a WebAssembly dependency in `src/lib`. When one is genuinely needed, the precedent is `@eeholmes/zarrita-pcodec`: a separate optional package registered through a lazy `() => import(...)` thunk, so the WebAssembly is fetched only if a dataset uses it. **[`claude/codec-support.md`](./claude/codec-support.md) is the surveyed inventory** of what decodes today, what does not, and which gaps belong to gridlook, zarrita or numcodecs.js.
+
+A codec gridlook cannot decode **never fails at open time**. The store opens, every variable lists, and the failure arrives on the first chunk read — indistinguishable at a glance from the CORS-blocked virtual chunks above. When triaging a dataset that lists its variables but will not plot, check the array metadata's codec list before suspecting the network.
+
+`src/lib/data/codecErrors.ts` turns those failures into a message naming the codec, and `useLog` applies it, so the call sites keep passing their own context strings unchanged. Two constraints if you extend it: the grid data worker flattens errors to a plain string before `postMessage`, so the error class and its fields are gone by the time one reaches the UI — classification must work on message text as well as structure — and anything zarrita puts on `cause` has to be appended explicitly (`flattenErrorMessage`) or it is lost.
+
+`codecErrors.ts` and `tests/unit/lib/data/codecErrors.test.ts` are kept **byte-identical** to the copies on the `fix/codec-error-messages` branch proposed upstream. Change one and you must change the other, or the next `git merge upstream/main` conflicts. That is also why the test inlines its fixtures rather than using `tests/helpers/zarrStoreFixtures.ts`, which is fork-only.
 
 ### Value transforms
 

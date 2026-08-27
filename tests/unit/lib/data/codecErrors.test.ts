@@ -3,12 +3,6 @@ import { get, open } from "zarrita";
 
 import "@/lib/data/codecs.ts";
 import {
-  base64Bytes,
-  v2ArrayMetadata,
-  v2Store,
-} from "../../../helpers/zarrStoreFixtures.ts";
-
-import {
   explainDataError,
   flattenErrorMessage,
 } from "@/lib/data/codecErrors.ts";
@@ -19,17 +13,47 @@ import {
  *
  * Each case is checked twice: once as thrown, and once after the round trip
  * through `flattenErrorMessage` plus `new Error(...)` that the grid data
- * worker performs, which strips the error's class and fields.
+ * worker performs, which strips the error's class and its fields.
  */
+
+const V2MetadataKey = {
+  FILL_VALUE: "fill_value",
+  ZARR_FORMAT: "zarr_format",
+} as const;
+
+function base64Bytes(encoded: string) {
+  return Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
+}
 
 /** What `gridData.worker.ts` posts back and `gridDataWorkerClient.ts` rebuilds. */
 function throughWorker(error: unknown) {
   return new Error(flattenErrorMessage(error));
 }
 
+function v2Store(dtype: string, compressor: unknown, chunk: Uint8Array) {
+  const metadata = new TextEncoder().encode(
+    JSON.stringify({
+      chunks: [4],
+      compressor,
+      dtype,
+      filters: [],
+      order: "C",
+      shape: [4],
+      [V2MetadataKey.FILL_VALUE]: null,
+      [V2MetadataKey.ZARR_FORMAT]: 2,
+    })
+  );
+  return new Map([
+    ["/.zarray", metadata],
+    ["/0", chunk],
+  ]);
+}
+
 async function readV2(compressor: unknown, chunk: Uint8Array) {
-  const store = v2Store(v2ArrayMetadata({ compressor, dtype: "<f4" }), chunk);
-  return await get(await open.v2(store, { kind: "array" }));
+  const array = await open.v2(v2Store("<f4", compressor, chunk), {
+    kind: "array",
+  });
+  return await get(array);
 }
 
 function caught(promise: Promise<unknown>) {
@@ -96,13 +120,12 @@ describe("a registered codec that rejects the chunk", () => {
 
 describe("a data type this browser cannot represent", () => {
   async function unsupportedDataTypeError() {
+    // zarrita maps float16 onto `globalThis.Float16Array`, which older
+    // browsers do not have.
     const original = Reflect.get(globalThis, "Float16Array");
     Reflect.deleteProperty(globalThis, "Float16Array");
     try {
-      const store = v2Store(
-        v2ArrayMetadata({ dtype: "<f2" }),
-        new Uint8Array(8)
-      );
+      const store = v2Store("<f2", null, new Uint8Array(8));
       return await caught(open.v2(store, { kind: "array" }));
     } finally {
       Reflect.set(globalThis, "Float16Array", original);
@@ -118,8 +141,7 @@ describe("a data type this browser cannot represent", () => {
 
 describe("errors that are not codec problems", () => {
   const UNRELATED = [
-    // The CORS message from PR #8 must keep its own wording.
-    new Error("Failed to fetch chunk bytes from coastwatch.noaa.gov"),
+    new Error("Failed to fetch chunk bytes from example.invalid"),
     new TypeError("Failed to fetch"),
     new Error("Cannot convert a BigInt value to a number"),
     new Error("Not found: /some/path"),

@@ -1,75 +1,133 @@
-# Handoff — 2026-08-27 (session 4)
+# Handoff — 2026-08-27 (session 5)
 
 Read this at the start of a new session. Cross-referenced by `CLAUDE.md`.
 
 ## Status
 
-- **Branch `main`** is at `fae9360`, in sync with `origin/main`. Working tree clean.
-- **Issues:** #1, #2, #4 and #7 are closed. **PRs:** #3, #6 and #8 merged.
-- **Remote branches:** `main` only.
+- **Branch `main`** carries the codec work (PR #9). Working tree clean.
+- **Issues:** #1, #2, #4, #5 and #7 are closed. **PRs:** #3, #6, #8 and #9 merged.
+- **Local branch `fix/codec-error-messages`** is the proposed upstream PR and is
+  **not** merged into `main` — see "The upstream PR" below. Do not delete it.
 
-## What just shipped (PR #8, issue #7)
+## What just shipped (PR #9, issue #5)
 
-A readable error when an Icechunk repository's **virtual chunks** are blocked by CORS.
+A survey of Zarr codec and data-type support, the tests to keep it honest, and
+a readable error when a codec is the reason a dataset will not plot.
 
-- **The reported symptom:** `https://data.source.coop/fish-pace/coastwatch/ocean-heat/na/` failed with a bare "Could not fetch data / Failed to fetch".
-- **The actual cause:** nothing in the data path. The repository opens fine and every variable indexes. It stores only byte-range references into NetCDF files on `coastwatch.noaa.gov`, which serves those bytes happily to `curl` but sends no `Access-Control-Allow-Origin` for any origin. The coordinates were written as `loadable_variables`, so they are materialised on source.coop (which does send CORS headers) and load — which is why the dataset lists its variables and only fails on plot.
-- **New `src/lib/data/virtualChunkFetch.ts`** — a `FetchClient` that leaves the request completely untouched (icechunk-js still builds the `Range` header and follows redirects) and only rewrites the opaque `TypeError: Failed to fetch` into a message naming the host and the likely cause. Aborts and same-origin failures pass through unchanged.
-- **New `docs/icechunk-virtual-chunks.md`** — why a repository can index but not plot, a `curl` recipe to test a host, and the three workarounds.
-- 8 new tests in `tests/unit/lib/data/virtualChunkFetch.test.ts`.
+- **`claude/codec-support.md`** is the deliverable to read first. It records
+  where codec support actually comes from, a problem list P1–P7, which problems
+  belong to gridlook vs zarrita vs numcodecs.js, how to package the upstream PR,
+  and the branch topology.
+- **`src/lib/data/codecErrors.ts`** (new) turns three opaque failures into
+  messages naming the culprit: an unregistered codec, a codec that rejected a
+  chunk (with the reason zarrita put on `cause`), and a data type the browser
+  cannot represent. Applied in `useLog`, so no call site changed its context
+  string. **No decoder was added** — an unsupported dataset still fails, it just
+  says why.
+- **Four new test files**, 104 assertions, no network. `codecSupport`,
+  `dataTypeSupport` and `pcodecSupport` are the survey; `codecErrors` covers the
+  new module. Golden chunk bytes come from Python `numcodecs` 0.16.5 and `zarr`
+  3.3.0, so a passing decode means gridlook agrees with the reference encoder.
+- **Merge surface on upstream-owned files: 14 lines.** `useLog.ts` +11,
+  `gridData.worker.ts` +2, `eslint.config.js` +1.
 
-**Merge surface on upstream-owned files: 7 lines.** `src/lib/data/icechunkStore.ts` +5/−1 (pass the fetch client to `IcechunkStore.open`) and `docs/README.md` +2. Everything else is new files.
+### The three findings worth remembering
 
-**This is diagnosis, not a workaround.** The dataset still needs a CORS-unblocking browser extension to render; gridlook does not proxy. Verified out of band that NOAA serves the exact chunk range (`206`, correct `Content-Range`) to a fully browser-shaped cross-site request and still sends no `Access-Control-Allow-Origin`, so the missing header really is the only blocker. The custom-header hypothesis in issue #7 (icechunk PR #2255) cannot help — `User-Agent` is a forbidden header in browsers.
+- **`src/lib/data/codecs.ts` is byte-identical to upstream's.** Upstream already
+  carries the `zarrita-pcodec` package. Codec support is not a fork divergence,
+  so anything done here is a candidate for upstream directly.
+- **The biggest real gap is zarr v3.** zarr-python 3 writes codec names like
+  `numcodecs.fixedscaleoffset` into `zarr.json`, and zarrita aliases only ten
+  `numcodecs.*` names. The sharp edge: the same fixedscaleoffset filter decodes
+  under v2 and fails under v3.
+- **Most of that gap is plain JavaScript, not WebAssembly.** `quantize` and
+  `astype` decode to a dtype cast; only `bz2`, `lzma` and `zfpy` need a real
+  decompressor, and none is common in ESM output. Upstream's no-WASM position
+  costs almost nothing here.
 
-## Two lessons from this session worth carrying forward
+## The upstream PR
 
-- **The "Allow CORS" extension toggle reads backwards.** A switch showing `ON` means _CORS blocking is on_; it must be clicked to `OFF` to permit cross-origin reads. Eli lost real time to this while the extension reported "ON". This is now written into `CLAUDE.md` under "Data access" — **raise it first** whenever an extension is reportedly installed and enabled yet data still will not load, together with a hard reload (a cached `206` without CORS headers replays from cache without the extension ever running). Only after both come back clean is it worth looking inside gridlook.
-- **Do not ship code for an unconfirmed hypothesis.** Mid-session I added a main-thread retry to `src/lib/grids/gridDataWorkerClient.ts` (+46) on the theory that the extension might not cover Web Worker requests. The real causes were the unhelpful message plus the toggle, so that commit was dropped before the PR. Diagnose, confirm with Eli, _then_ write the fix — extra code paths no confirmed problem requires are cost, not insurance, and they enlarge the upstream merge surface for nothing.
+`fix/codec-error-messages` is branched from **`upstream/main`**, not from this
+fork's `main` (which is 14+ commits ahead), and contains only four files:
+`codecErrors.ts`, its test, `useLog.ts` and `gridData.worker.ts`. All four CI
+steps from upstream's `lint.yml` pass on it.
 
-## Environment changes made this session
+**The four files are byte-identical on both branches, and must stay that way.**
+That is what makes a later `git merge upstream/main` clean — verified by
+simulating both a merge-commit and a squash-merge of the PR upstream and
+merging the result back; both are clean and change nothing in the tree. If a
+maintainer revises the code during review, reset the fork's copy to match
+upstream's rather than hand-merging.
 
-- **Node was already installed; the shell was the problem.** `~/.local/opt/node-v24.20.0-linux-x64` and the `~/.local/bin` symlinks survive across hubs because the home directory is persistent. What was missing was `~/.bash_profile` — a bash **login** shell (which is what the JupyterHub terminal spawns) reads `~/.bash_profile`/`~/.profile`, never `~/.bashrc`, so the `PATH` line in `~/.bashrc` never applied and `npm` looked uninstalled. Created `~/.bash_profile` sourcing `~/.bashrc`; verified in a fresh login shell. **If `npm` appears missing on a new hub, check this before reinstalling anything.**
-- Tool shells still start without `~/.local/bin` on `PATH`; prepend `export PATH="$HOME/.local/opt/node-v24.20.0-linux-x64/bin:$PATH"` in Bash calls. With that set, the Husky hooks run normally — earlier sessions had to bypass them with `-c core.hooksPath=/dev/null`, which is no longer necessary.
+The fork-only pieces — `tests/helpers/zarrStoreFixtures.ts`, the survey tests,
+the `eslint.config.js` line and `claude/codec-support.md` — are deliberately not
+in that PR.
+
+Status: branch prepared locally, **not yet pushed**. Eli opens the PR himself
+with a note for the maintainers.
 
 ## Immediate next candidates
 
-From `claude/comparison.md`, the remaining **High** priority themes:
+Eli's stated order of business is diagnosis before fixes, so the survey's
+follow-ons are now the shortlist. From `claude/codec-support.md` §5:
 
-| #   | Theme                                          | comparison.md section | Rough scope                                                                                                                                                     |
-| --- | ---------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2   | Nested-group / root-group handling             | §2                    | Deep-group Icechunk URLs, downsampled sibling groups; touches `ZarrDataManager` and `sourceIndexing`                                                            |
-| 3   | Extra Zarr codecs (fletcher32, blosc2, pcodec) | §3                    | Upstream has `codecs.ts` and `fletcher32.ts` — check codec set, add missing decoders                                                                            |
-| 4   | Zarr v3 metadata edge cases                    | §4                    | `_ARRAY_DIMENSIONS` fallback, object-style `data_type`, unconsolidated metadata                                                                                 |
-| 10  | Load-time & interaction performance            | §10                   | **Subtle** — upstream has since moved to worker-based grid pipeline (`src/lib/grids/*.worker.ts`); some fork perf tricks may now be obsolete or need re-shaping |
+| Next                                               | Home         | Rough scope                                                                              |
+| -------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------- |
+| Explain int64 and string variables (P2, P3)        | gridlook     | Same shape as what just shipped; `toNumber` in `timeHandling.ts` already solves the cast |
+| Register `quantize` and `astype` (P1, trivial row) | gridlook     | New files shaped like `fletcher32.ts`, one `registry.set` line each                      |
+| Object-form `data_type` crashes (P4)               | zarrita      | File an issue at `manzt/zarrita.js`; crashes even on `{"name": "float32"}`               |
+| v2/v3 `fixedscaleoffset` asymmetry (P1)            | zarrita      | File an issue; report the asymmetry, not a feature request                               |
+| `bz2` / `lzma` / `zfpy` (P1, last row)             | numcodecs.js | File the gap Eli already named in d70-t/gridlook#180                                     |
 
-Theme #1 (Icechunk-js store backend) is effectively **resolved** — upstream's `src/lib/data/icechunkStore.ts` works, and PR #8 confirmed it opens format-v2 repositories and indexes them correctly. Re-read §1 before assuming anything is still outstanding there.
-
-Ask Eli which one first. Do **not** propose porting all of them — Eli chooses per-theme.
-
-Also open: further data transforms beyond `log10` (issue #4 noted more would follow). The registry in `src/lib/data/valueTransform.ts` is ready for them.
+Still open from earlier sessions, in `claude/comparison.md`: theme #2
+(nested-group handling), #4 (Zarr v3 metadata edge cases — overlaps P4), #10
+(load-time performance). Ask Eli which; do not propose porting all of them.
 
 ## Working principles
 
-- Fork-only changes must minimize edits to upstream files. Prefer new files + tiny delegation shims, and prefer GitHub-side settings over editing inherited config.
-- This repo is a fork of `d70-t/gridlook`. Fork-only work does not target upstream.
-- Local dev is behind JupyterHub — dev URL uses `/proxy/absolute/3000/` (not `/proxy/3000/`). `npm run dev` handles this automatically via `vite.jupyter.config.ts`.
-- Verify with `npm run lint-ci && npm run typecheck && npm run test && npm run build` before every commit.
-- Follow Conventional Commits (Commitlint enforces them). No changelog is generated — Release Please is off and stays off.
-- Delegate broad research (multi-PR reads, cross-file audits) to Explore or general-purpose agents so the main context stays lean.
+- **Diagnosis ships before the fix.** When a failure is opaque, build the
+  message that names the specific culprit first and let Eli decide separately
+  whether the fix is worth the merge surface. An unsupported codec is invisible
+  until someone opens a dataset that uses it, and a generic "could not load"
+  destroys the evidence needed to report it upstream.
+- Fork-only changes must minimize edits to upstream files. Prefer new files +
+  tiny delegation shims, and prefer GitHub-side settings over editing inherited
+  config.
+- **Anything proposed upstream needs tests.** Upstream's `lint.yml` runs
+  `npm run test` on every push and PR, upstream carries 20 test files including
+  ones over the composable and toast layer, and every substantive PR among the
+  last twelve merged changed `tests/`.
+- Verify with `npm run lint-ci && npm run typecheck && npm run test && npm run build`
+  before every commit.
+- Follow Conventional Commits (Commitlint enforces them). No changelog is
+  generated — Release Please is off and stays off.
+- Delegate broad research (multi-PR reads, cross-file audits) to Explore or
+  general-purpose agents so the main context stays lean.
 
-## Environment quirks worth remembering
+## Environment notes
 
-- `strictPort: true` is set for dev — port 3000 conflicts fail loudly. Kill stray processes with `pkill -9 -f "vite --port"`.
-- Do not launch background dev servers from tool calls. Vite processes started that way persist across turns and block subsequent runs.
-- HMR through the proxy may or may not connect cleanly. Manual refresh works either way.
-- Remote branch deletion and repo-settings writes via `gh api` are blocked by the permission classifier — hand those commands to Eli instead of retrying. (`gh pr merge --delete-branch` does work.)
+- **Node is already installed**; if `npm` looks missing, suspect the shell.
+  `~/.local/opt/node-v24.20.0-linux-x64` persists across hubs. Tool shells may
+  start without it on `PATH` — prepend
+  `export PATH="$HOME/.local/opt/node-v24.20.0-linux-x64/bin:$PATH"`.
+- **Python has `numcodecs` 0.16.5, `numpy` and `zarr` 3.3.0.** That is how the
+  golden chunk bytes and the zarr v3 metadata fixtures in the codec tests were
+  generated; use it again rather than hand-rolling bytes.
+- An `upstream` remote (`d70-t/gridlook`) is configured. `main` is 14+ commits
+  ahead of it and 0 behind.
+- `strictPort: true` for dev — kill strays with `pkill -9 -f "vite --port"`.
+- Do not launch background dev servers from tool calls; they persist across
+  turns and block later runs.
+- Remote branch deletion and repo-settings writes via `gh api` are blocked by
+  the permission classifier — hand those to Eli. (`gh pr merge --delete-branch`
+  does work.)
 
 ## How to resume
 
 Start a new session and say either:
 
-- **"read `claude/handoff.md` and tell me what's next"** — gets you a status summary + shortlist
-- **"port theme #N from the comparison"** — where N is one of the High-priority items above (or any of the 12 themes in `claude/comparison.md`)
-- **"add a <name> transform"** — extends `src/lib/data/valueTransform.ts`
-- **"look at something else in gridlook-xl"** — free-form investigation
+- **"read `claude/handoff.md` and tell me what's next"**
+- **"do P2 and P3"** — explain int64 and string variables, per `codec-support.md`
+- **"file the zarrita issue"** — P4, the object-form `data_type` crash
+- **"port theme #N from the comparison"**
+- **"look at something else in gridlook-xl"**

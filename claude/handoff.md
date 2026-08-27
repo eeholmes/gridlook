@@ -1,4 +1,4 @@
-# Handoff — 2026-08-27 (session 5)
+# Handoff — 2026-08-27 (session 6)
 
 Read this at the start of a new session. Cross-referenced by `CLAUDE.md`.
 
@@ -9,12 +9,29 @@ own document under `claude/` is a pointer, not a retelling.
 
 - **`main`** is in sync with `origin/main`, working tree clean, and roughly 20
   commits ahead of `upstream/main` and 0 behind.
-- **Issues:** #1, #2, #4, #5 and #7 are closed. **PRs:** #3, #6, #8 and #9 merged.
-- **Branch `fix/codec-error-messages`** is pushed to the fork but deliberately
-  **not** merged into `main`. It is a proposed pull request to
-  `d70-t/gridlook`, waiting for Eli to open it on GitHub. **Do not delete it,
-  and do not merge it into `main`** — see `claude/codec-support.md` §6 for why
-  its files must stay byte-identical to the copies on `main`.
+- **Issues:** #1, #2, #4, #5, #7 and #10 are closed. **PRs:** #3, #6, #8, #9
+  and #11 merged.
+
+### Two branches proposed upstream — do not delete, do not merge into `main`
+
+Both are pushed to the fork only, branched from `upstream/main`, and open as
+pull requests on `d70-t/gridlook`. Each carries exactly the fix named in its
+title and nothing else from this fork's 20-commit lead, so the maintainers can
+take one without the other.
+
+| Branch                         | Upstream PR          | Fork-side status                                               |
+| ------------------------------ | -------------------- | -------------------------------------------------------------- |
+| `fix/codec-error-messages`     | `d70-t/gridlook#210` | never merged here; the fix reached `main` separately via PR #9 |
+| `fix/colormap-swatch-base-url` | `d70-t/gridlook#211` | the same fix is already on `main` via PR #11                   |
+
+The files each branch touches are **byte-identical** to the copies on `main`.
+Change one and you must change the other, or the next `git merge upstream/main`
+conflicts. For `fix/codec-error-messages` the details are in
+`claude/codec-support.md` §6; for `fix/colormap-swatch-base-url` it is the two
+one-line edits listed under "Colormap swatches" below.
+
+Merging either upstream PR is safe: `main` already holds the identical change,
+so the merge is a no-op on those lines.
 
 ## Codec and data-type support
 
@@ -27,6 +44,20 @@ codec-related; there is nothing here that is not there.
 Shipped in PR #9 (issue #5): the survey, its tests, and
 `src/lib/data/codecErrors.ts`, which names the codec when a dataset cannot be
 decoded. No decoders were added.
+
+## Colormap swatches
+
+Issue #10 (PR #11): the gradient thumbnails were requested from an absolute
+`/static/colormaps/<name>.webp`, whose leading slash ignores the `base` the
+app is built with. `vite.config.ts` sets `base: "./"`, so anywhere but the
+domain root — GitHub Pages at `/gridlook/`, the JupyterHub proxy prefix in dev
+— every swatch 404s silently. Both call sites now prefix
+`import.meta.env.BASE_URL`.
+
+**The rule this leaves behind:** files in `public/` are referenced from script
+through `import.meta.env.BASE_URL`, never a leading slash.
+`src/ui/overlays/controls/ColormapControls.vue` and
+`src/ui/overlays/HoverReadout.vue` were the only two such paths in `src/`.
 
 ## Other reference documents
 
@@ -47,7 +78,9 @@ decoded. No decoders were added.
   config.
 - **Anything proposed upstream needs tests.** Upstream's `lint.yml` runs
   `npm run test` on every push and PR, and every substantive PR among the last
-  twelve merged changed `tests/`.
+  twelve merged changed `tests/`. The exception is a change with no testable
+  seam — `d70-t/gridlook#211` edits two string literals inside `.vue` files,
+  and the suite runs in `node` with no DOM.
 - Verify with `npm run lint-ci && npm run typecheck && npm run test && npm run build`
   before every commit.
 - Follow Conventional Commits (Commitlint enforces them). No changelog is

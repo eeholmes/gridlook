@@ -165,6 +165,7 @@ export default [
       "boundaries/ignore": [
         "**/*.spec.ts",
         "**/*.test.ts",
+        "tests/**",
         "env.d.ts",
         "vite.config.ts",
         "scripts/**",

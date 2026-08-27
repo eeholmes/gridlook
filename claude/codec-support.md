@@ -337,6 +337,47 @@ That removes the `tests/helpers/` directory and the `boundaries/ignore` line
 from the PR, leaving it as one new source file, one new test file, and 13 lines
 across two files upstream owns.
 
+### The two branches, and why merging back is safe
+
+They are **not** the same branch, and they must not be:
+
+- `feat/codec-support-research` — branched from this fork's `main`, which sits
+  14 commits ahead of upstream. It carries the fix, the survey tests, the
+  fixture helper, the `eslint.config.js` line and this document. This is what
+  merges into the fork's `main`.
+- `fix/codec-error-messages` — branched from **`upstream/main`**, carrying only
+  four files: `codecErrors.ts`, its test, and the two edited files. Basing it
+  on the fork's `main` instead would have dragged all 14 fork-only commits into
+  the pull request.
+
+The thing that makes a later `git merge upstream/main` safe is not the branch
+structure but the **file contents**: all four files are byte-identical between
+the two branches (same git blob hashes). When upstream merges the PR, upstream
+and the fork end up holding the same bytes, so git's three-way merge sees the
+same change on both sides and takes it once.
+
+This was verified rather than assumed, by simulating both outcomes on scratch
+branches: upstream merge-commits the PR, and upstream squash-merges it (which
+severs the shared ancestry). Both merge cleanly into a fork `main` that already
+has the task branch, and in both cases the merge changes nothing in the working
+tree — the fork already had that content. The fork-only files survive untouched.
+
+Two things would break that guarantee, and both are worth watching for:
+
+- **Editing one copy and not the other.** If a change is made to
+  `codecErrors.ts` or its test on one branch, make the identical change on the
+  other, or the next upstream merge conflicts.
+- **Maintainers revising the code during review.** If they rename something or
+  reword a message, upstream's copy diverges and the merge will conflict on
+  exactly those files. That is normal and the resolution is simply to take
+  upstream's version — but the fork's copy should then be reset to match rather
+  than merged by hand, so the two stay identical for next time.
+
+The `eslint.config.js` line and `tests/helpers/` stay fork-only. They are not
+in the PR, so upstream never touches them; the only way they conflict is if
+upstream independently edits `boundaries/ignore`, which would be a one-line
+resolution.
+
 One thing that needs no attention: upstream's `useGridDataLoader.test.ts`
 asserts `logError` was called with `"Could not fetch data"`. Because the
 explanation is applied inside `useLog` rather than at the call sites, that

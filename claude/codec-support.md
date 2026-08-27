@@ -56,7 +56,7 @@ Three properties worth keeping:
 What this design deliberately does **not** do is hit real datasets. Network
 tests would make CI flaky and would conflate codec bugs with CORS and host
 outages — the failure mode that ate PR #8. Real URLs belong in the manual
-checklist in §5 instead.
+checklist in §6 instead.
 
 ---
 
@@ -82,14 +82,14 @@ Unregistered and reachable today: `fixedscaleoffset`, `quantize`, `astype`,
 
 The useful split is by what a decoder would cost:
 
-| Codec                 | Decode is…                                                                               | Plain JS?      |
-| --------------------- | ---------------------------------------------------------------------------------------- | -------------- |
-| `quantize`            | a dtype cast — the lossy step is encode-only                                             | trivial        |
-| `astype`              | a dtype cast                                                                             | trivial        |
-| `fixedscaleoffset`    | `value / scale + offset`; zarrita already has the pieces (`scale_offset` + `cast_value`) | trivial        |
-| `crc32`, `adler32`    | strip and verify 4 checksum bytes                                                        | small          |
-| `packbits`            | bit unpacking                                                                            | small          |
-| `bz2`, `lzma`, `zfpy` | a real decompressor                                                                      | **needs WASM** |
+| Codec                 | Decode is…                                                                                        | Plain JS?      |
+| --------------------- | ------------------------------------------------------------------------------------------------- | -------------- |
+| `quantize`            | a dtype cast — the lossy step is encode-only                                                      | trivial        |
+| `astype`              | a dtype cast                                                                                      | trivial        |
+| `fixedscaleoffset`    | `value / scale + offset`, then a cast; zarrita has both pieces but wires them only in its v2 path | yes, ~40 lines |
+| `crc32`, `adler32`    | strip and verify 4 checksum bytes                                                                 | small          |
+| `packbits`            | bit unpacking                                                                                     | small          |
+| `bz2`, `lzma`, `zfpy` | a real decompressor                                                                               | **needs WASM** |
 
 So most of the gap closes with plain JavaScript. Only the last row runs into
 upstream's no-WASM position, and none of those three is common in ESM output.
@@ -168,7 +168,108 @@ repos' installs reproducible. Not a gridlook code change at all.
 
 ---
 
-## 4. Options, if we decide to act
+## 4. Where each fix belongs
+
+Three possible homes, and the choice is not really about preference — it is
+about where the failing code lives and whether gridlook has a hook to reach it.
+
+| Problem                                                   | Best home                     | Why                                                                                         |
+| --------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------- |
+| P1 — `quantize`, `astype`, `packbits`, `crc32`, `adler32` | **gridlook**                  | The registry is the sanctioned extension point, and we already use it three times           |
+| P1 — `numcodecs.fixedscaleoffset` (v3 name)               | **zarrita** (gridlook viable) | zarrita already owns the mapping; duplicating it here means maintaining a second copy       |
+| P1 — `bz2`, `lzma`, `zfpy`                                | **numcodecs.js**              | They need a real decompressor; this is the gap Eli named in d70-t/gridlook#180              |
+| P2 — int64/uint64 variables                               | **gridlook**                  | zarrita is right to return `BigInt64Array`; the render pipeline decides what to do with it  |
+| P3 — string variables                                     | **gridlook**                  | Same: the data is decoded correctly, the display layer swallows it                          |
+| P4 — object-form `data_type`                              | **zarrita**                   | Crashes inside `open.v3` before gridlook sees anything, and there is no hook for data types |
+| P5 — float16 without `Float16Array`                       | **zarrita**                   | Same reason; gridlook could only polyfill a global, which is worse                          |
+| P6 — codec errors read as "Could not fetch data"          | **gridlook**                  | Purely presentation, at a boundary we own                                                   |
+| P7 — `github:` pcodec dependency                          | neither                       | It is a release chore in the `zarrita-pcodec` repo                                          |
+
+### Fix in gridlook — and the existing code to copy
+
+Each of these has a working example in the repository already, which is the
+main reason to prefer them: the shape is proven and upstream has accepted it.
+
+**Adding a codec (P1's plain-JS rows).** `src/lib/data/fletcher32.ts` is the
+template — a class with `kind`, `fromConfig`, `decode` and a stub `encode` that
+throws, registered with one `registry.set` line in `codecs.ts`. `logBins.ts` and
+`gribscan.ts` are the same pattern at larger sizes. Nothing about this touches
+zarrita: `registry` is public API, and zarrita issue #310 was closed precisely
+to make this the supported path. `quantize` and `astype` are almost free here
+because their decode is a dtype cast — the lossy work happens on encode, which
+we never do. `crc32` and `adler32` are `fletcher32.ts` with a different
+checksum.
+
+**Converting decoded arrays (P2, P3).** `src/lib/data/variableDecoding.ts` is
+the single funnel, and gridlook has already solved this exact conversion once:
+`toNumber` in `src/lib/data/timeHandling.ts` handles `bigint` and `string`
+for time coordinates, and `dimensionData.ts` carries a
+`number | bigint | string` coordinate type with explicit `UnicodeStringArray` /
+`ByteStringArray` branches. So the codebase already knows these arrays exist —
+it is only `castDataVarToFloat32` that assumes everything is a number. That
+makes P2/P3 a consistency fix rather than a new capability, which is a much
+easier argument to make upstream.
+
+**Improving the message (P6).** `src/lib/data/virtualChunkFetch.ts` from PR #8
+is the model: leave the behaviour completely untouched, catch the opaque error
+at the boundary, and rewrite it into something that names the cause. A codec
+equivalent would turn `UnknownCodecError` into a message naming the codec and
+pointing at re-encoding or a codec extension, and would unwrap
+`CodecPipelineError.cause` so checksum and truncation failures stop being
+swallowed by `getErrorMessage` in `src/utils/errorHandling.ts`.
+
+**If a WASM-only codec ever matters**, the precedent is `zarrita-pcodec`: a
+separate optional package, registered lazily in `codecs.ts`, so the WebAssembly
+never enters the bundle unless a dataset needs it. Do not vendor a decompressor
+into `src/lib`.
+
+### File upstream instead
+
+**P4 — object-form `data_type` → issue, and the PR is small.** This is the
+clearest upstream case. `zarrita` 0.7.4 assumes `data_type` is a string and
+calls `dataType.match(...)` inside its metadata parser, so the failure happens
+during `open.v3` before any gridlook code runs. There is no registry or hook to
+intercept it — the only workaround would be rewriting the metadata JSON before
+handing it to zarrita, which is exactly the kind of speculative parallel code
+path worth avoiding. Two details make this an easy report: the zarr v3 spec
+explicitly allows the object form, and it currently crashes even for
+`{"name": "float32"}`, a plain core type with no extension semantics at all. A
+`TypeError` rather than an `InvalidMetadataError` is itself a bug, since
+zarrita's own docs promise `isZarritaError` covers what it throws.
+
+**P1's `numcodecs.fixedscaleoffset` → issue, though we could patch locally.**
+Worth being precise about why this is not a one-line alias. zarrita represents
+the filter as two v3 codecs, `scale_offset` (array→array, dtype-preserving)
+followed by `cast_value`, and wires them up only inside `v2ToV3ArrayMetadata`.
+A registry entry for the single `numcodecs.fixedscaleoffset` name would have to
+do the divide-then-cast itself, so it is a ~40-line codec here rather than an
+alias — a second copy of a mapping zarrita already maintains. The better report
+is the asymmetry itself: **the same filter decodes under zarr v2 and fails
+under v3**, which is a self-evident inconsistency in zarrita rather than a
+feature request, and one fix there covers every zarrita consumer. The same
+argument extends to the other `numcodecs.zarr3` wrapper names, since
+zarr-python now writes them by default.
+
+**P5 — float16 → mention it, expect a "browsers have caught up" answer.**
+zarrita maps `float16` onto `globalThis.Float16Array` with no fallback, so on
+an older browser the array cannot be opened at all. It could fall back to a
+manual half-float decode — zarrita already handles the analogous case in
+`codecs/json-scalar.js`, where a missing `DataView.prototype.getFloat16` raises
+a clean `UnsupportedError` rather than crashing. Gridlook's only alternative
+would be polyfilling a global, which is worse than documenting the browser
+requirement. Low priority: the baseline is Chrome 135 / Firefox 129 / Safari 26,
+and it works end to end above that.
+
+**P1's `bz2`, `lzma`, `zfpy` → `manzt/numcodecs.js`, not zarrita.** These need
+real decompressors, and numcodecs.js is where the other compiled compressors
+live. This is the gap Eli already identified in d70-t/gridlook#180: nine
+compression codecs in the Python suite, five implemented in JavaScript. Filing
+there is more useful than filing against zarrita, which only wires up whatever
+numcodecs.js provides.
+
+---
+
+## 5. Options, if we decide to act
 
 Not implemented. Roughly ascending in cost, with merge surface against upstream:
 
@@ -177,8 +278,8 @@ Not implemented. Roughly ascending in cost, with merge surface against upstream:
    the dataset needs re-encoding or a codec extension, plus unwrapping
    `CodecPipelineError.cause`. Merge surface: a few lines at the catch site.
    This is exactly the PR #8 pattern.
-2. **Register the trivial v3 aliases** (P1, top three rows). `quantize`,
-   `astype` and `fixedscaleoffset` as small pure-JS codecs in new files, with
+2. **Register the trivial v3 codecs** (P1, top two rows). `quantize` and
+   `astype` as small pure-JS codecs in new files, with
    `codecs.ts` gaining one `registry.set` line each. Plain JS, no WASM, and
    directly upstreamable — it is the same shape as the existing `fletcher32.ts`.
 3. **Handle int64 and string variables explicitly** (P2, P3). Either convert
@@ -186,9 +287,14 @@ Not implemented. Roughly ascending in cost, with merge surface against upstream:
    clearly. Touches `castDataVarToFloat32`, which upstream owns — a few lines.
 4. **Checksum codecs** (`crc32`, `adler32`) — small, but no known ESM dataset
    here needs them yet. Probably not worth the diff until one shows up.
-5. **File the zarrita issue for object-form `data_type`** (P4). No gridlook
-   change; the fix belongs upstream of us.
-6. **Publish `zarrita-pcodec` to npm** (P7). Outside this repo.
+5. **File the zarrita issues** — object-form `data_type` (P4) first, since it is
+   an outright crash on spec-legal metadata, then the v2/v3 asymmetry for
+   `numcodecs.fixedscaleoffset` (P1). No gridlook change in either case; see §4
+   for why neither has a good local workaround.
+6. **File the numcodecs.js gap** for `bz2`, `lzma` and `zfpy` (P1, last row) —
+   the point Eli already made in d70-t/gridlook#180, in the repo that can act
+   on it.
+7. **Publish `zarrita-pcodec` to npm** (P7). Outside this repo.
 
 The one thing that clearly should **not** happen is pulling `bz2`, `lzma` or
 `zfpy` into gridlook as WebAssembly. If any of those ever matters, the pcodec
@@ -196,7 +302,7 @@ precedent applies: a separate optional package, lazily loaded.
 
 ---
 
-## 5. Manual checklist for real datasets
+## 6. Manual checklist for real datasets
 
 Deliberately not in CI. Run by hand when touching this area:
 
@@ -211,7 +317,7 @@ suspecting the network — §3's last bullet explains why the two look alike.
 
 ---
 
-## 6. Note on the one file this branch touches that upstream owns
+## 7. Note on the one file this branch touches that upstream owns
 
 `eslint.config.js`, one line: `"tests/**"` added to `boundaries/ignore`, so the
 shared fixture helper under `tests/helpers/` does not trip

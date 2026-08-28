@@ -12,6 +12,8 @@ Each entry in `datasets` may also include:
 - `grid` — e.g. `regular`, `curvilinear`, `healpix`, `triangular`, `irregular`, `gaussian_reduced`
 - `convention` — e.g. `GeoZarr`, or `null`
 - `crs` — e.g. `EPSG:4326`, `EPSG:3031`
+- `tag` — a short status word, shared with the plain catalog format; `broken` is
+  rendered as a red pill so entries that no longer load stand out
 
 All fields are optional. Any subset can be populated per entry.
 
@@ -20,7 +22,7 @@ All fields are optional. Any subset can be populated per entry.
 When the loaded catalog contains at least one entry with any extended field, `CatalogPanel.vue` delegates rendering to `CatalogPanelExtended.vue`, which:
 
 - shows a filter dropdown for each field that has at least one value in the dataset,
-- renders per-entry tag pills for the populated fields,
+- renders per-entry tag pills for the populated fields, including `tag`,
 - offers a per-entry Copy URL button that strips `::…` state suffixes and the `icechunk+` prefix.
 
 When no entry has any extended field, the existing panel is rendered unchanged.

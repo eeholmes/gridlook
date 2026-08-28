@@ -59,8 +59,17 @@ through `import.meta.env.BASE_URL`, never a leading slash.
 `src/ui/overlays/controls/ColormapControls.vue` and
 `src/ui/overlays/HoverReadout.vue` were the only two such paths in `src/`.
 
+## Test dataset catalog
+
+The audit behind issue #12 — how every entry in
+`public/static/catalog-extended.json` was tested in a real browser, which
+eleven are tagged `broken`, the five datasets added, and the ten entries whose
+verdict still needs Eli on real hardware — is in
+**[`claude/catalog-audit.md`](./catalog-audit.md)**.
+
 ## Other reference documents
 
+- **[`claude/catalog-audit.md`](./catalog-audit.md)** — as above.
 - **[`claude/comparison.md`](./comparison.md)** — the archaeology of the
   `eeholmes/gridlook-xl` fork, as 12 numbered themes. Themes #2 (nested-group
   handling), #4 (Zarr v3 metadata edge cases) and #10 (load-time performance)

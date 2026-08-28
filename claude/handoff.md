@@ -63,9 +63,10 @@ through `import.meta.env.BASE_URL`, never a leading slash.
 
 The audit behind issue #12 — how every entry in
 `public/static/catalog-extended.json` was tested in a real browser, which
-eleven are tagged `broken`, the five datasets added, and the ten entries whose
-verdict still needs Eli on real hardware — is in
-**[`claude/catalog-audit.md`](./catalog-audit.md)**.
+nineteen are tagged `broken`, and the five datasets added — is in
+**[`claude/catalog-audit.md`](./catalog-audit.md)**. It produced issues #15
+(dynamical.org chunk geometry), #16 (ORCESTRA HEALPix z12) and #17 (categorical
+default variables), all open.
 
 ## Other reference documents
 

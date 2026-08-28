@@ -84,18 +84,37 @@ Source Cooperative URLs follow `icechunk+https://data.source.coop/<account>/<rep
 use the newer Icechunk layout with a `repo` file rather than `refs/`, and the
 bundled `icechunk-js` reads them without trouble.
 
-## Left for Eli to confirm
+## The eleven Eli tested on real hardware
 
-Ten entries crashed the headless renderer or failed to finish inside the
-90-second budget, with no diagnosable cause. They were **left untagged**,
-because a software-WebGL crash on four cores is not evidence about a real
-machine. They are worth a look on hardware before deciding:
+The first pass left ten entries undecided because a software-WebGL crash on four
+cores is not evidence about a real machine. Eli tested them in his own browser
+and the verdicts below are his; the measurements that follow are what those
+verdicts prompted.
 
-NOAA GFS, NOAA HRRR, NOAA MRMS, ECMWF AIFS ensemble, ECMWF IFS ensemble, NOAA
-GEFS analysis (already prefixed `Slow - `), both NOAA GEFS 35-day entries, NEMO
-daily surface salinity, and the two ORCESTRA HEALPix entries. The IFS-AMIP
-TCo1279 entry is a separate case: eerie.cloud returned `503` for its chunks on
-three separate attempts, which may simply be the server having a bad day.
+Now also tagged `broken` and moved to the end: **NOAA MRMS**, **NOAA HRRR**,
+**ECMWF IFS Ensemble 15-day**, all three **NOAA GEFS** entries, and both
+**ORCESTRA HEALPix** entries. **NOAA GFS** and **ECMWF AIFS Single** work once
+pointed at a real variable, so both carry `::varname=temperature_2m`. **ECMWF
+AIFS Ensemble** loads eventually and took the `Slow - ` prefix. **NEMO Daily
+Surface Salinity** is fine, only a little slow.
+
+Three GitHub issues came out of it, split by measured cause:
+
+- **[#15](https://github.com/eeholmes/gridlook/issues/15)** — the six
+  dynamical.org entries. Not the store, not CORS, and not the default variable:
+  all six still fail with a real variable. Their chunks are long in time and
+  small in x/y, so one 2-D map costs 6–63 GB of downloads. The two comparable
+  datasets that _do_ work need 0.4 GB and 13 GB, which is the whole argument.
+- **[#16](https://github.com/eeholmes/gridlook/issues/16)** — the two ORCESTRA
+  HEALPix zoom-12 stores, 9,371,648 cells each, 12.8 GB and 280 GB per map.
+  Filed separately because the cell count is a second cost on top of the
+  transfer, and Eli's `sea` renders / `ua` does not split points at it.
+- **[#17](https://github.com/eeholmes/gridlook/issues/17)** — the default
+  variable on the dynamical.org stores is a `categorical_*` field that samples
+  100% NaN (GEFS analysis, MRMS) or constant zero (GFS). The globe comes up
+  empty with no message, which is why these looked broken before #15 was
+  measured. A scan confirmed none of the 47 entries that render default to a
+  categorical variable, so nothing is passing for the wrong reason.
 
 Two entries still carrying a `Mild Error - ` prefix — ICON-EPOC 1990 atmosphere
 and IFS-FESOM2-SR — rendered cleanly in this sweep. The prefix was left alone

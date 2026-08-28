@@ -94,7 +94,7 @@
     },
     {
       "title": "NOAA Global Forecast System (GFS) Global Weather Forecast",
-      "url": "icechunk+https://dynamical-noaa-gfs.s3.us-west-2.amazonaws.com/noaa-gfs-forecast/v0.2.7.icechunk/",
+      "url": "icechunk+https://dynamical-noaa-gfs.s3.us-west-2.amazonaws.com/noaa-gfs-forecast/v0.2.7.icechunk/::varname=temperature_2m",
       "format": "Zarr v3",
       "access": "icechunk",
       "convention": null,
@@ -114,7 +114,7 @@
     },
     {
       "title": "ECMWF Artificial Intelligence Forecasting System (AIFS) Single Forecast",
-      "url": "icechunk+https://dynamical-ecmwf-aifs-single.s3.us-west-2.amazonaws.com/ecmwf-aifs-single-forecast/v0.1.0.icechunk/",
+      "url": "icechunk+https://dynamical-ecmwf-aifs-single.s3.us-west-2.amazonaws.com/ecmwf-aifs-single-forecast/v0.1.0.icechunk/::varname=temperature_2m",
       "format": "Zarr v3",
       "access": "icechunk",
       "convention": null,
@@ -193,70 +193,10 @@
       "crs": "EPSG:4326"
     },
     {
-      "title": "NOAA HRRR High-Resolution Rapid Refresh Analysis",
-      "url": "icechunk+https://dynamical-noaa-hrrr.s3.us-west-2.amazonaws.com/noaa-hrrr-analysis/v0.2.0.icechunk/",
-      "format": "Zarr v3",
-      "access": "icechunk",
-      "convention": null,
-      "layout": "simple",
-      "grid": "lambert",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "NOAA MRMS CONUS Hourly Radar-Based Precipitation Analysis",
-      "url": "icechunk+https://dynamical-noaa-mrms.s3.amazonaws.com/noaa-mrms-conus-analysis-hourly/v0.3.0.icechunk/",
-      "format": "Zarr v3",
-      "access": "icechunk",
-      "convention": null,
-      "layout": "simple",
-      "grid": "regular",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "ECMWF AIFS Ensemble Forecast",
+      "title": "Slow - ECMWF AIFS Ensemble Forecast",
       "url": "icechunk+https://dynamical-ecmwf-aifs-ens.s3.us-west-2.amazonaws.com/ecmwf-aifs-ens-forecast/v0.1.0.icechunk/",
       "format": "Zarr v3",
       "access": "icechunk",
-      "convention": null,
-      "layout": "simple",
-      "grid": "regular",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "ECMWF IFS Ensemble 15-day Weather Forecast (0.25°)",
-      "url": "icechunk+https://dynamical-ecmwf-ifs-ens.s3.us-west-2.amazonaws.com/ecmwf-ifs-ens-forecast-15-day-0-25-degree/v0.1.0.icechunk/",
-      "format": "Zarr v3",
-      "access": "icechunk",
-      "convention": null,
-      "layout": "simple",
-      "grid": "regular",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "Slow - NOAA GEFS Global Ensemble Forecast Analysis",
-      "url": "icechunk+https://dynamical-noaa-gefs.s3.us-west-2.amazonaws.com/noaa-gefs-analysis/v0.1.2.icechunk/",
-      "format": "Zarr v3",
-      "access": "icechunk",
-      "convention": null,
-      "layout": "simple",
-      "grid": "regular",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "NOAA GEFS 35-day Ensemble Forecast",
-      "url": "icechunk+https://dynamical-noaa-gefs.s3.us-west-2.amazonaws.com/noaa-gefs-forecast-35-day/v0.2.0.icechunk/",
-      "format": "Zarr v3",
-      "access": "icechunk",
-      "convention": null,
-      "layout": "simple",
-      "grid": "regular",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "NOAA GEFS 35-day Ensemble Forecast",
-      "url": "https://data.dynamical.org/noaa/gefs/forecast-35-day/latest.zarr",
-      "format": "Zarr v3",
-      "access": "direct",
       "convention": null,
       "layout": "simple",
       "grid": "regular",
@@ -553,26 +493,6 @@
       "crs": "EPSG:4326"
     },
     {
-      "title": "ORCESTRA 1250 m 2D HEALPix",
-      "url": "https://eerie.cloud.dkrz.de/datasets/orcestra_1250m_2d_hpz12/stac",
-      "format": "Zarr v2",
-      "access": "direct",
-      "convention": null,
-      "layout": "simple",
-      "grid": "healpix",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "ORCESTRA 1250 m 3D HEALPix",
-      "url": "https://eerie.cloud.dkrz.de/datasets/orcestra_1250m_3d_hpz12/stac",
-      "format": "Zarr v2",
-      "access": "direct",
-      "convention": null,
-      "layout": "simple",
-      "grid": "healpix",
-      "crs": "EPSG:4326"
-    },
-    {
       "title": "Alaska HRRR",
       "url": "https://data.source.coop/bkr/dmi/alaska_hrrr.icechunk::catalog=static/catalog.json::projectionCenterLat=0::projectionCenterLon=0::varname=10_metre_u_wind_component_at_10.0m::dimIndices_time=0::dimIndices_step=0::camerastate=Jcw5DsJAEETRuzgej7q7euUqiICAwInNYiLE3RnkoJL60vtM9-217Mu2TqfznB0I8gwhUStom6UzFRjlmZXkkY3RzdxLTMnK_NKmx_u6357rwVAXIQqgSj3VTIdDnYMhKVzKgI30Py2rRFyRNFbcqIdFOMyZODQG__0B::dimIndices_level=0::projection=nearside_perspective",
       "format": "Zarr v3",
@@ -764,6 +684,94 @@
       "convention": null,
       "layout": "simple",
       "grid": "triangular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - NOAA HRRR High-Resolution Rapid Refresh Analysis",
+      "url": "icechunk+https://dynamical-noaa-hrrr.s3.us-west-2.amazonaws.com/noaa-hrrr-analysis/v0.2.0.icechunk/",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "lambert",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - NOAA MRMS CONUS Hourly Radar-Based Precipitation Analysis",
+      "url": "icechunk+https://dynamical-noaa-mrms.s3.amazonaws.com/noaa-mrms-conus-analysis-hourly/v0.3.0.icechunk/",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - ECMWF IFS Ensemble 15-day Weather Forecast (0.25°)",
+      "url": "icechunk+https://dynamical-ecmwf-ifs-ens.s3.us-west-2.amazonaws.com/ecmwf-ifs-ens-forecast-15-day-0-25-degree/v0.1.0.icechunk/",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - NOAA GEFS Global Ensemble Forecast Analysis",
+      "url": "icechunk+https://dynamical-noaa-gefs.s3.us-west-2.amazonaws.com/noaa-gefs-analysis/v0.1.2.icechunk/",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - NOAA GEFS 35-day Ensemble Forecast",
+      "url": "icechunk+https://dynamical-noaa-gefs.s3.us-west-2.amazonaws.com/noaa-gefs-forecast-35-day/v0.2.0.icechunk/",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - NOAA GEFS 35-day Ensemble Forecast",
+      "url": "https://data.dynamical.org/noaa/gefs/forecast-35-day/latest.zarr",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "direct",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - ORCESTRA 1250 m 2D HEALPix",
+      "url": "https://eerie.cloud.dkrz.de/datasets/orcestra_1250m_2d_hpz12/stac",
+      "tag": "broken",
+      "format": "Zarr v2",
+      "access": "direct",
+      "convention": null,
+      "layout": "simple",
+      "grid": "healpix",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - ORCESTRA 1250 m 3D HEALPix",
+      "url": "https://eerie.cloud.dkrz.de/datasets/orcestra_1250m_3d_hpz12/stac",
+      "tag": "broken",
+      "format": "Zarr v2",
+      "access": "direct",
+      "convention": null,
+      "layout": "simple",
+      "grid": "healpix",
       "crs": "EPSG:4326"
     }
   ]

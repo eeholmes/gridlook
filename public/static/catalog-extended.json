@@ -53,16 +53,6 @@
       "crs": "EPSG:4326"
     },
     {
-      "title": "Broken - NASA Multi-scale Ultra-high Resolution (MUR) Sea Surface Temperature (SST)",
-      "url": "https://mur-sst.s3.us-west-2.amazonaws.com/zarr-v1/",
-      "format": "Zarr v2",
-      "access": "direct",
-      "convention": null,
-      "layout": "simple",
-      "grid": "regular",
-      "crs": "EPSG:4326"
-    },
-    {
       "title": "CMIP6 NOAA GFDL-ESM4 Historical Sea Surface Temperature",
       "url": "https://storage.googleapis.com/cmip6/CMIP6/CMIP/NOAA-GFDL/GFDL-ESM4/historical/r2i1p1f1/Omon/tos/gn/v20180701/",
       "format": "Zarr v2",
@@ -104,7 +94,7 @@
     },
     {
       "title": "NOAA Global Forecast System (GFS) Global Weather Forecast",
-      "url": "icechunk+https://dynamical-noaa-gfs.s3.us-west-2.amazonaws.com/noaa-gfs-forecast/v0.2.7.icechunk/",
+      "url": "icechunk+https://dynamical-noaa-gfs.s3.us-west-2.amazonaws.com/noaa-gfs-forecast/v0.2.7.icechunk/::varname=temperature_2m",
       "format": "Zarr v3",
       "access": "icechunk",
       "convention": null,
@@ -124,22 +114,12 @@
     },
     {
       "title": "ECMWF Artificial Intelligence Forecasting System (AIFS) Single Forecast",
-      "url": "icechunk+https://dynamical-ecmwf-aifs-single.s3.us-west-2.amazonaws.com/ecmwf-aifs-single-forecast/v0.1.0.icechunk/",
+      "url": "icechunk+https://dynamical-ecmwf-aifs-single.s3.us-west-2.amazonaws.com/ecmwf-aifs-single-forecast/v0.1.0.icechunk/::varname=temperature_2m",
       "format": "Zarr v3",
       "access": "icechunk",
       "convention": null,
       "layout": "simple",
       "grid": "regular",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "WCRP Hackathon ICON Global Weather Simulation Atmosphere Dataset",
-      "url": "https://s3.eu-dkrz-1.dkrz.cloud/wrcp-hackathon/data/ICON/d3hp003.zarr/P1D_mean_z7_atm",
-      "format": "Zarr v3",
-      "access": "direct",
-      "convention": null,
-      "layout": "grouped",
-      "grid": "healpix",
       "crs": "EPSG:4326"
     },
     {
@@ -213,110 +193,10 @@
       "crs": "EPSG:4326"
     },
     {
-      "title": "NOAA HRRR High-Resolution Rapid Refresh Analysis",
-      "url": "icechunk+https://dynamical-noaa-hrrr.s3.us-west-2.amazonaws.com/noaa-hrrr-analysis/v0.2.0.icechunk/",
-      "format": "Zarr v3",
-      "access": "icechunk",
-      "convention": null,
-      "layout": "simple",
-      "grid": "lambert",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "NOAA MRMS CONUS Hourly Radar-Based Precipitation Analysis",
-      "url": "icechunk+https://dynamical-noaa-mrms.s3.amazonaws.com/noaa-mrms-conus-analysis-hourly/v0.3.0.icechunk/",
-      "format": "Zarr v3",
-      "access": "icechunk",
-      "convention": null,
-      "layout": "simple",
-      "grid": "regular",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "ECMWF AIFS Ensemble Forecast",
+      "title": "Slow - ECMWF AIFS Ensemble Forecast",
       "url": "icechunk+https://dynamical-ecmwf-aifs-ens.s3.us-west-2.amazonaws.com/ecmwf-aifs-ens-forecast/v0.1.0.icechunk/",
       "format": "Zarr v3",
       "access": "icechunk",
-      "convention": null,
-      "layout": "simple",
-      "grid": "regular",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "ECMWF IFS Ensemble 15-day Weather Forecast (0.25°)",
-      "url": "icechunk+https://dynamical-ecmwf-ifs-ens.s3.us-west-2.amazonaws.com/ecmwf-ifs-ens-forecast-15-day-0-25-degree/v0.1.0.icechunk/",
-      "format": "Zarr v3",
-      "access": "icechunk",
-      "convention": null,
-      "layout": "simple",
-      "grid": "regular",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "Slow - NOAA GEFS Global Ensemble Forecast Analysis",
-      "url": "icechunk+https://dynamical-noaa-gefs.s3.us-west-2.amazonaws.com/noaa-gefs-analysis/v0.1.2.icechunk/",
-      "format": "Zarr v3",
-      "access": "icechunk",
-      "convention": null,
-      "layout": "simple",
-      "grid": "regular",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "Broken - ISMIP6 Antarctic Ice Sheet Model Intercomparison",
-      "url": "icechunk+https://data.source.coop/englacial/ismip6/icechunk-ais",
-      "format": "Zarr v3",
-      "access": "icechunk",
-      "convention": null,
-      "layout": "grouped",
-      "grid": "polar_stereographic",
-      "crs": "EPSG:3031"
-    },
-    {
-      "title": "Broken - ISMIP6 Antarctic Ice Sheet — AWI_PISM1 Exp 05",
-      "url": "icechunk+https://data.source.coop/englacial/ismip6/icechunk-ais/combined/AWI_PISM1/exp05",
-      "format": "Zarr v3",
-      "access": "icechunk",
-      "convention": null,
-      "layout": "grouped",
-      "grid": "polar_stereographic",
-      "crs": "EPSG:3031"
-    },
-    {
-      "title": "NOAA GEFS 35-day Ensemble Forecast",
-      "url": "icechunk+https://dynamical-noaa-gefs.s3.us-west-2.amazonaws.com/noaa-gefs-forecast-35-day/v0.2.0.icechunk/",
-      "format": "Zarr v3",
-      "access": "icechunk",
-      "convention": null,
-      "layout": "simple",
-      "grid": "regular",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "NOAA GEFS 35-day Ensemble Forecast",
-      "url": "https://data.dynamical.org/noaa/gefs/forecast-35-day/latest.zarr",
-      "format": "Zarr v3",
-      "access": "direct",
-      "convention": null,
-      "layout": "simple",
-      "grid": "regular",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "Broken - AOML Oceanographic Demo Dataset (2012)",
-      "url": "icechunk+https://data.source.coop/bkr/aoml/aoml_2012.icechunk",
-      "format": "Zarr v3",
-      "access": "icechunk",
-      "convention": null,
-      "layout": "simple",
-      "grid": "regular",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "ERA5 Single-Level Atmospheric Reanalysis Multi-Variable",
-      "url": "https://storage.googleapis.com/gcp-public-data-arco-era5/co/single-level-reanalysis.zarr-v2",
-      "format": "Zarr v2",
-      "access": "direct",
       "convention": null,
       "layout": "simple",
       "grid": "regular",
@@ -413,16 +293,6 @@
       "crs": "EPSG:3031"
     },
     {
-      "title": "Slow - CarbonPlan Polar Projection Example Dataset",
-      "url": "https://carbonplan-share.s3.us-west-2.amazonaws.com/zarr-layer-examples/polar-subset.zarr",
-      "format": "Zarr v2",
-      "access": "direct",
-      "convention": null,
-      "layout": "simple",
-      "grid": "polar_stereographic",
-      "crs": "EPSG:3031"
-    },
-    {
       "title": "CarbonPlan Multi-Level Hybrid Virtual Icechunk",
       "url": "icechunk+https://carbonplan-share.s3.us-west-2.amazonaws.com/zarr-layer-examples/pipeline/multi_level_virtual_hybrid_icechunk.icechunk",
       "format": "Zarr v3",
@@ -431,16 +301,6 @@
       "layout": "multiscale",
       "grid": "regular",
       "crs": "EPSG:4326"
-    },
-    {
-      "title": "Broken - Sentinel-2 L2A Surface Reflectance Tile T37TBG",
-      "url": "https://s3.explorer.eopf.copernicus.eu/esa-zarr-sentinel-explorer-fra/tests-output/sentinel-2-l2a/S2C_MSIL2A_20251218T083401_N0511_R021_T37TBG_20251218T112007.zarr/measurements/reflectance",
-      "format": "Zarr v3",
-      "access": "direct",
-      "convention": null,
-      "layout": "grouped",
-      "grid": "utm",
-      "crs": "EPSG:32637"
     },
     {
       "title": "SILAM Global Dust Model Forecasts - Aerosol",
@@ -456,16 +316,6 @@
       "title": "SILAM Global Dust Model Forecasts - Dust",
       "url": "https://data.source.coop/bkr/silam-dust/silam_global_dust_v3.zarr",
       "format": "Zarr v3",
-      "access": "direct",
-      "convention": null,
-      "layout": "simple",
-      "grid": "regular",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "SILAM Global Dust Model Forecasts - Dust",
-      "url": "https://data.source.coop/bkr/silam-dust/data.zarr",
-      "format": "Zarr v2",
       "access": "direct",
       "convention": null,
       "layout": "simple",
@@ -563,28 +413,8 @@
       "crs": "EPSG:4326"
     },
     {
-      "title": "ERA5-Land-DKRZ Surface Analysis Hourly",
-      "url": "https://eerie.cloud.dkrz.de/datasets/era5-land-dkrz.surface_analysis_hourly/stac",
-      "format": "Zarr v2",
-      "access": "direct",
-      "convention": null,
-      "layout": "simple",
-      "grid": "irregular",
-      "crs": "EPSG:4326"
-    },
-    {
       "title": "Mild Error - ICON-EPOC Control 1990 Atmosphere Daily Mean",
       "url": "https://eerie.cloud.dkrz.de/datasets/icon-epoc.control-1990.v20250325.atmos.native.2d_daily_mean/stac",
-      "format": "Zarr v2",
-      "access": "direct",
-      "convention": null,
-      "layout": "simple",
-      "grid": "triangular",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "Mild Error - ICON-EPOC Control 1990 Ocean Daily Mean",
-      "url": "https://eerie.cloud.dkrz.de/datasets/icon-epoc.control-1990.v20250325.ocean.native.2d_daily_mean/stac::varname=Wind_Speed_10m",
       "format": "Zarr v2",
       "access": "direct",
       "convention": null,
@@ -663,26 +493,6 @@
       "crs": "EPSG:4326"
     },
     {
-      "title": "ORCESTRA 1250 m 2D HEALPix",
-      "url": "https://eerie.cloud.dkrz.de/datasets/orcestra_1250m_2d_hpz12/stac",
-      "format": "Zarr v2",
-      "access": "direct",
-      "convention": null,
-      "layout": "simple",
-      "grid": "healpix",
-      "crs": "EPSG:4326"
-    },
-    {
-      "title": "ORCESTRA 1250 m 3D HEALPix",
-      "url": "https://eerie.cloud.dkrz.de/datasets/orcestra_1250m_3d_hpz12/stac",
-      "format": "Zarr v2",
-      "access": "direct",
-      "convention": null,
-      "layout": "simple",
-      "grid": "healpix",
-      "crs": "EPSG:4326"
-    },
-    {
       "title": "Alaska HRRR",
       "url": "https://data.source.coop/bkr/dmi/alaska_hrrr.icechunk::catalog=static/catalog.json::projectionCenterLat=0::projectionCenterLon=0::varname=10_metre_u_wind_component_at_10.0m::dimIndices_time=0::dimIndices_step=0::camerastate=Jcw5DsJAEETRuzgej7q7euUqiICAwInNYiLE3RnkoJL60vtM9-217Mu2TqfznB0I8gwhUStom6UzFRjlmZXkkY3RzdxLTMnK_NKmx_u6357rwVAXIQqgSj3VTIdDnYMhKVzKgI30Py2rRFyRNFbcqIdFOMyZODQG__0B::dimIndices_level=0::projection=nearside_perspective",
       "format": "Zarr v3",
@@ -700,6 +510,268 @@
       "convention": null,
       "layout": "simple",
       "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "CORS - NOAA CoastWatch Ocean Heat Content, North Atlantic (Daily)",
+      "url": "icechunk+https://data.source.coop/ocean-icechunks/noaa-ohc/na/daily::varname=ohc",
+      "tag": "needs CORS extension",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "grouped",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "CORS - NOAA CoastWatch Ocean Heat Content, North Pacific (Daily)",
+      "url": "icechunk+https://data.source.coop/ocean-icechunks/noaa-ohc/np/daily::varname=ohc",
+      "tag": "needs CORS extension",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "grouped",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "CORS - NOAA CoastWatch Ocean Heat Content, South Pacific (Daily)",
+      "url": "icechunk+https://data.source.coop/ocean-icechunks/noaa-ohc/sp/daily::varname=ohc",
+      "tag": "needs CORS extension",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "grouped",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "Copernicus GlobColour Global Ocean Colour Plankton (4 km, Daily)",
+      "url": "icechunk+https://data.source.coop/fish-pace/globcolour/cmems_obs-oc_glo_bgc-plankton_my_l3-multi-4km_P1D::varname=CHL",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "GOBAI-O2 Global Gridded Monthly Ocean Interior Dissolved Oxygen",
+      "url": "icechunk+https://data.source.coop/fish-pace/gobai-o2/monthly::varname=oxy",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - NASA Multi-scale Ultra-high Resolution (MUR) Sea Surface Temperature (SST)",
+      "url": "https://mur-sst.s3.us-west-2.amazonaws.com/zarr-v1/",
+      "tag": "broken",
+      "format": "Zarr v2",
+      "access": "direct",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - WCRP Hackathon ICON Global Weather Simulation Atmosphere Dataset",
+      "url": "https://s3.eu-dkrz-1.dkrz.cloud/wrcp-hackathon/data/ICON/d3hp003.zarr/P1D_mean_z7_atm",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "direct",
+      "convention": null,
+      "layout": "grouped",
+      "grid": "healpix",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - ISMIP6 Antarctic Ice Sheet Model Intercomparison",
+      "url": "icechunk+https://data.source.coop/englacial/ismip6/icechunk-ais",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "grouped",
+      "grid": "polar_stereographic",
+      "crs": "EPSG:3031"
+    },
+    {
+      "title": "BROKEN - ISMIP6 Antarctic Ice Sheet — AWI_PISM1 Exp 05",
+      "url": "icechunk+https://data.source.coop/englacial/ismip6/icechunk-ais/combined/AWI_PISM1/exp05",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "grouped",
+      "grid": "polar_stereographic",
+      "crs": "EPSG:3031"
+    },
+    {
+      "title": "BROKEN - AOML Oceanographic Demo Dataset (2012)",
+      "url": "icechunk+https://data.source.coop/bkr/aoml/aoml_2012.icechunk",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - ERA5 Single-Level Atmospheric Reanalysis Multi-Variable",
+      "url": "https://storage.googleapis.com/gcp-public-data-arco-era5/co/single-level-reanalysis.zarr-v2",
+      "tag": "broken",
+      "format": "Zarr v2",
+      "access": "direct",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - CarbonPlan Polar Projection Example Dataset",
+      "url": "https://carbonplan-share.s3.us-west-2.amazonaws.com/zarr-layer-examples/polar-subset.zarr",
+      "tag": "broken",
+      "format": "Zarr v2",
+      "access": "direct",
+      "convention": null,
+      "layout": "simple",
+      "grid": "polar_stereographic",
+      "crs": "EPSG:3031"
+    },
+    {
+      "title": "BROKEN - Sentinel-2 L2A Surface Reflectance Tile T37TBG",
+      "url": "https://s3.explorer.eopf.copernicus.eu/esa-zarr-sentinel-explorer-fra/tests-output/sentinel-2-l2a/S2C_MSIL2A_20251218T083401_N0511_R021_T37TBG_20251218T112007.zarr/measurements/reflectance",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "direct",
+      "convention": null,
+      "layout": "grouped",
+      "grid": "utm",
+      "crs": "EPSG:32637"
+    },
+    {
+      "title": "BROKEN - SILAM Global Dust Model Forecasts - Dust",
+      "url": "https://data.source.coop/bkr/silam-dust/data.zarr",
+      "tag": "broken",
+      "format": "Zarr v2",
+      "access": "direct",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - ERA5-Land-DKRZ Surface Analysis Hourly",
+      "url": "https://eerie.cloud.dkrz.de/datasets/era5-dkrz.land_surface_analysis_hourly/stac",
+      "tag": "broken",
+      "format": "Zarr v2",
+      "access": "direct",
+      "convention": null,
+      "layout": "simple",
+      "grid": "irregular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - ICON-EPOC Control 1990 Ocean Daily Mean",
+      "url": "https://eerie.cloud.dkrz.de/datasets/icon-epoc.control-1990.v20250325.ocean.native.2d_daily_mean/stac::varname=Wind_Speed_10m",
+      "tag": "broken",
+      "format": "Zarr v2",
+      "access": "direct",
+      "convention": null,
+      "layout": "simple",
+      "grid": "triangular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - NOAA HRRR High-Resolution Rapid Refresh Analysis",
+      "url": "icechunk+https://dynamical-noaa-hrrr.s3.us-west-2.amazonaws.com/noaa-hrrr-analysis/v0.2.0.icechunk/",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "lambert",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - NOAA MRMS CONUS Hourly Radar-Based Precipitation Analysis",
+      "url": "icechunk+https://dynamical-noaa-mrms.s3.amazonaws.com/noaa-mrms-conus-analysis-hourly/v0.3.0.icechunk/",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - ECMWF IFS Ensemble 15-day Weather Forecast (0.25°)",
+      "url": "icechunk+https://dynamical-ecmwf-ifs-ens.s3.us-west-2.amazonaws.com/ecmwf-ifs-ens-forecast-15-day-0-25-degree/v0.1.0.icechunk/",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - NOAA GEFS Global Ensemble Forecast Analysis",
+      "url": "icechunk+https://dynamical-noaa-gefs.s3.us-west-2.amazonaws.com/noaa-gefs-analysis/v0.1.2.icechunk/",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - NOAA GEFS 35-day Ensemble Forecast",
+      "url": "icechunk+https://dynamical-noaa-gefs.s3.us-west-2.amazonaws.com/noaa-gefs-forecast-35-day/v0.2.0.icechunk/",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - NOAA GEFS 35-day Ensemble Forecast",
+      "url": "https://data.dynamical.org/noaa/gefs/forecast-35-day/latest.zarr",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "direct",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - ORCESTRA 1250 m 2D HEALPix",
+      "url": "https://eerie.cloud.dkrz.de/datasets/orcestra_1250m_2d_hpz12/stac",
+      "tag": "broken",
+      "format": "Zarr v2",
+      "access": "direct",
+      "convention": null,
+      "layout": "simple",
+      "grid": "healpix",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - ORCESTRA 1250 m 3D HEALPix",
+      "url": "https://eerie.cloud.dkrz.de/datasets/orcestra_1250m_3d_hpz12/stac",
+      "tag": "broken",
+      "format": "Zarr v2",
+      "access": "direct",
+      "convention": null,
+      "layout": "simple",
+      "grid": "healpix",
       "crs": "EPSG:4326"
     }
   ]

@@ -70,6 +70,7 @@ const filteredDatasets = computed(() => {
       const haystack = [
         entry.title ?? "",
         entry.url,
+        entry.tag ?? "",
         entry.format ?? "",
         entry.access ?? "",
         entry.layout ?? "",
@@ -273,6 +274,13 @@ async function copyUrl(url: string) {
         </button>
         <div class="catalog-entry-tags-row">
           <div class="catalog-entry-tags">
+            <span
+              v-if="entry.tag"
+              class="tag is-small"
+              :class="entry.tag === 'broken' ? 'is-danger' : 'is-light'"
+            >
+              {{ entry.tag }}
+            </span>
             <span v-if="entry.format" class="tag is-info is-light is-small">
               {{ entry.format }}
             </span>

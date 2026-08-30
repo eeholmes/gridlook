@@ -1,4 +1,4 @@
-# Handoff — 2026-08-27 (session 6)
+# Handoff — 2026-08-30 (session 7)
 
 Read this at the start of a new session. Cross-referenced by `CLAUDE.md`.
 
@@ -10,7 +10,7 @@ own document under `claude/` is a pointer, not a retelling.
 - **`main`** is in sync with `origin/main`, working tree clean, and roughly 20
   commits ahead of `upstream/main` and 0 behind.
 - **Issues:** #1, #2, #4, #5, #7 and #10 are closed. **PRs:** #3, #6, #8, #9
-  and #11 merged.
+  and #11 merged. #13 is open but **shelved** — see below.
 
 ### Two branches proposed upstream — do not delete, do not merge into `main`
 
@@ -58,6 +58,26 @@ domain root — GitHub Pages at `/gridlook/`, the JupyterHub proxy prefix in dev
 through `import.meta.env.BASE_URL`, never a leading slash.
 `src/ui/overlays/controls/ColormapControls.vue` and
 `src/ui/overlays/HoverReadout.vue` were the only two such paths in `src/`.
+
+## NASA Earthdata Icechunk stores (issue #13, shelved)
+
+The three `fish-pace/pace-oci/inregion/*` stores on source.coop will not load
+in a browser. The full diagnosis and Eli's plan are in the **comment on
+[issue #13](https://github.com/eeholmes/gridlook/issues/13#issuecomment-5465930284)**;
+there is no separate document and nothing here repeats it.
+
+The one-line version: the stores' only virtual chunk container is
+`s3://ob-cumulus-prod-public/`, and neither that bucket nor NASA's HTTPS (TEA)
+endpoint sends CORS headers, so no credential can unblock a browser. Adding an
+`Authorization` header would make it worse, because the custom header forces a
+preflight that TEA answers with `405`.
+
+**Shelved pending two things outside this repo**: `earthaccess` work that lets
+the stores be rebuilt with HTTPS (`access='indirect'`) references, and a CORS
+conversation with OB.DAAC. Do not start the gridlook-side token input until the
+first of those lands — it is a small change to
+`src/lib/data/virtualChunkFetch.ts`, which icechunk-js already documents as the
+hook for auth headers.
 
 ## Test dataset catalog
 

@@ -24,6 +24,16 @@ take one without the other.
 | `fix/codec-error-messages`     | `d70-t/gridlook#210` | never merged here; the fix reached `main` separately via PR #9 |
 | `fix/colormap-swatch-base-url` | `d70-t/gridlook#211` | the same fix is already on `main` via PR #11                   |
 
+`fix/codec-error-messages` had one round of upstream review (Karinon,
+2026-08-28): `explainDataError` became `explainCodecError`, and
+`flattenErrorMessage` moved from `src/lib/data/codecErrors.ts` to
+`src/utils/errorHandling.ts` with its tests. Both changes are on the branch and
+were mirrored onto `main` by PR #19, so four files are now shared rather than
+two. Left open on that PR: an offer to drop the float16 data-type case, which
+only fires on browsers older than Chrome 135 / Firefox 129 / Safari 26 — if the
+maintainers take it, `explainCodecError` covers nothing but codecs and the name
+becomes exact.
+
 The files each branch touches are **byte-identical** to the copies on `main`.
 Change one and you must change the other, or the next `git merge upstream/main`
 conflicts. For `fix/codec-error-messages` the details are in

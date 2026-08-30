@@ -96,7 +96,7 @@ A codec gridlook cannot decode **never fails at open time**. The store opens, ev
 
 `src/lib/data/codecErrors.ts` turns those failures into a message naming the codec, and `useLog` applies it, so the call sites keep passing their own context strings unchanged. Two constraints if you extend it: the grid data worker flattens errors to a plain string before `postMessage`, so the error class and its fields are gone by the time one reaches the UI — classification must work on message text as well as structure — and anything zarrita puts on `cause` has to be appended explicitly (`flattenErrorMessage`) or it is lost.
 
-`codecErrors.ts` and `tests/unit/lib/data/codecErrors.test.ts` are kept **byte-identical** to the copies on the `fix/codec-error-messages` branch proposed upstream. Change one and you must change the other, or the next `git merge upstream/main` conflicts. That is also why the test inlines its fixtures rather than using `tests/helpers/zarrStoreFixtures.ts`, which is fork-only.
+`codecErrors.ts`, `tests/unit/lib/data/codecErrors.test.ts`, `src/utils/errorHandling.ts` and `tests/unit/utils/errorHandling.test.ts` are kept **byte-identical** to the copies on the `fix/codec-error-messages` branch proposed upstream. The last two joined the set when upstream review asked for `flattenErrorMessage` to move out of the codec-specific file. Change one and you must change the other, or the next `git merge upstream/main` conflicts. That is also why the test inlines its fixtures rather than using `tests/helpers/zarrStoreFixtures.ts`, which is fork-only.
 
 ### Value transforms
 

@@ -23,10 +23,10 @@ own document under `claude/` is a pointer, not a retelling.
 Both branches are pushed to the fork only, branched from `upstream/main`, and
 were opened as pull requests on `d70-t/gridlook`.
 
-| Branch                         | Upstream PR          | State                                                                                                                                         |
-| ------------------------------ | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fix/colormap-swatch-base-url` | `d70-t/gridlook#211` | **Merged upstream 2026-08-28.** The fix is in `upstream/main`, and on `main` here via PR #11. The branch is now redundant and can be deleted. |
-| `fix/codec-error-messages`     | `d70-t/gridlook#210` | **Open, changes requested — the ball is in our court.**                                                                                       |
+| Branch                             | Upstream PR          | State                                                                                                                                               |
+| ---------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ~~`fix/colormap-swatch-base-url`~~ | `d70-t/gridlook#211` | **Merged upstream 2026-08-28**, and on `main` here via PR #11. The branch was deleted locally and on `origin` on 2026-09-16; nothing is left to do. |
+| `fix/codec-error-messages`         | `d70-t/gridlook#210` | **Open, changes requested — the ball is in our court.**                                                                                             |
 
 **The one outstanding action on #210:** Karinon asked (2026-08-31) that the
 float16 data-type case be dropped, on the grounds that it was speculative and

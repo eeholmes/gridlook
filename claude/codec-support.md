@@ -4,8 +4,18 @@ Branch: `feat/codec-support-research`. **No fixes implemented** — this is the
 survey, the test harness, and the problem list, as issue #5 asked for.
 
 Everything below was measured, not inferred: the numbers come from probing
-`zarrita` 0.7.4 as it is installed here, and the byte fixtures come from Python
+`zarrita` as it is installed here, and the byte fixtures come from Python
 `numcodecs` 0.16.5 and `zarr` 3.3.0 on this machine.
+
+> **Updated 2026-09-16, after the upstream merge (PR #23).** Three things in
+> this document moved underneath it, and each is corrected in place below:
+> upstream packaged the extra codecs into **`codecita`** and deleted
+> `fletcher32.ts`, `gribscan.ts` and `logBins.ts` from `src/lib/data/` (§1);
+> the colormap PR `d70-t/gridlook#211` **merged** and `d70-t/gridlook#210` is
+> open with both review rounds answered, the float16 case removed at the
+> maintainer's request (§5, §6); and the shared-file set that must stay
+> byte-identical is now **six files, not four** (§6). The survey itself — which
+> codecs decode, which do not, and the test harness — still holds.
 
 ---
 
@@ -16,12 +26,21 @@ Three layers stack up, and only the third is ours:
 | Layer                    | What it contributes                                                                                                                                                                                      |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `numcodecs.js` 0.3.2     | The compiled compressors: **blosc, lz4, zstd, gzip, zlib**. Nothing else. Its README says so.                                                                                                            |
-| `zarrita` 0.7.4          | Wires those in, adds pure-JS `bytes`, `transpose`, `crc32c`, `vlen-utf8`, `json2`, `bitround`, `delta`, `shuffle`, `cast_value`, `scale_offset`, plus `sharding_indexed` (handled outside the registry). |
-| `src/lib/data/codecs.ts` | Adds `fletcher32`, `gribscan.rawgrib`, `log_bins`, and `pcodec` (via `@eeholmes/zarrita-pcodec`).                                                                                                        |
+| `zarrita` 0.7.5          | Wires those in, adds pure-JS `bytes`, `transpose`, `crc32c`, `vlen-utf8`, `json2`, `bitround`, `delta`, `shuffle`, `cast_value`, `scale_offset`, plus `sharding_indexed` (handled outside the registry). |
+| `src/lib/data/codecs.ts` | Registers `fletcher32`, `gribscan.rawgrib`, `log_bins` and `blosc2` from the **`codecita`** package, plus `pcodec` via `@eeholmes/zarrita-pcodec`.                                                       |
 
 `src/lib/data/codecs.ts` is **byte-identical to upstream's** — d70-t/gridlook
 already carries the pcodec package Eli built for #180, so codec support is not
 a fork divergence. Anything done here is a candidate for upstream directly.
+
+**Since 2026-09-15 the decoders themselves live in packages, not in this
+repository.** Upstream's `chore(lib): moved codecs into separate package`
+(`9733566`) deleted `src/lib/data/fletcher32.ts`, `gribscan.ts` and
+`logBins.ts` along with their tests, and `codecs.ts` is now seven
+`registry.set` lines importing from `codecita` 0.1.3. So "adding a codec" no
+longer means adding a file here: it means a package plus one registration
+line. The survey below still describes what decodes, which is unchanged — the
+same codecs are registered, from a different place.
 
 **pcodec's WebAssembly is already lazy.** `registerPCodec` only stores a
 `() => import("./PCodec.js")` thunk, so the 580 kB `pcodec.wasm` is fetched the
@@ -113,7 +132,7 @@ the reader what happened.
 
 The zarr v3 spec allows `"data_type": {"name": ..., "configuration": ...}`,
 which is how zarr-python writes extension types such as `numpy.datetime64`.
-zarrita 0.7.4 assumes a string and calls `dataType.match(...)`, so the failure
+zarrita 0.7.5 assumes a string and calls `dataType.match(...)`, so the failure
 is a bare `TypeError: dataType.match is not a function` — not even a zarrita
 error, so `isZarritaError` cannot classify it and no message explains it. This
 is an upstream zarrita bug and probably wants an issue at `manzt/zarrita.js`.
@@ -126,6 +145,14 @@ zarrita maps `float16` onto `globalThis.Float16Array`, which arrived in Chrome
 — so the variable never reaches the variable list at all, unlike a missing
 codec, which lists fine and fails on plot. Worth knowing when triaging "the
 variable isn't there" reports. On a current browser float16 works end to end.
+
+`explainCodecError` briefly carried a message for this case; it was **removed
+on 2026-09-16** at the maintainer's request on `d70-t/gridlook#210`, who did
+not want legacy-browser guards in the codebase. Nothing in the app names this
+failure now, which is the accepted trade. If it starts costing real debugging
+time — a workshop or conference demo on an old machine is the plausible way —
+the answer both sides preferred was a browser-capability check with a pop-up,
+not a special case inside the codec explainer.
 
 ### P6 — codec failures surface as "Could not fetch data" (medium)
 
@@ -149,8 +176,10 @@ fork-friendly move: improve the message, add no data paths.
 
 `package.json` pins `"github:eeholmes/zarrita-pcodec"` — no version, no
 registry, and it builds from source on install (`prepare` runs `tsc` plus a
-wasm copy). Upstream inherited this too. Publishing it to npm would make both
-repos' installs reproducible. Not a gridlook code change at all.
+wasm copy). **Upstream now depends on it directly** — `codecs.ts` on
+`upstream/main` calls `registerPCodec` — so publishing it to npm would make
+both repos' installs reproducible, and the case for doing so is stronger than
+when this was written. Not a gridlook code change at all.
 
 ### Not a problem, but worth recording
 
@@ -190,14 +219,17 @@ about where the failing code lives and whether gridlook has a hook to reach it.
 Each of these has a working example in the repository already, which is the
 main reason to prefer them: the shape is proven and upstream has accepted it.
 
-**Adding a codec (P1's plain-JS rows).** `src/lib/data/fletcher32.ts` is the
-template — a class with `kind`, `fromConfig`, `decode` and a stub `encode` that
-throws, registered with one `registry.set` line in `codecs.ts`. `logBins.ts` and
-`gribscan.ts` are the same pattern at larger sizes. Nothing about this touches
+**Adding a codec (P1's plain-JS rows).** The template is a class with `kind`,
+`fromConfig`, `decode` and a stub `encode` that throws, registered with one
+`registry.set` line in `codecs.ts`. That template used to be
+`src/lib/data/fletcher32.ts` here, with `logBins.ts` and `gribscan.ts` as
+larger examples; since the 2026-09-15 upstream move those three live in the
+**`codecita`** package, so read them there — and a new codec now most naturally
+belongs there too, rather than in `src/lib/data/`. Nothing about this touches
 zarrita: `registry` is public API, and zarrita issue #310 was closed precisely
 to make this the supported path. `quantize` and `astype` are almost free here
 because their decode is a dtype cast — the lossy work happens on encode, which
-we never do. `crc32` and `adler32` are `fletcher32.ts` with a different
+we never do. `crc32` and `adler32` are codecita's `Fletcher32Codec` with a different
 checksum.
 
 **Converting decoded arrays (P2, P3).** `src/lib/data/variableDecoding.ts` is
@@ -226,7 +258,7 @@ into `src/lib`.
 ### File upstream instead
 
 **P4 — object-form `data_type` → issue, and the PR is small.** This is the
-clearest upstream case. `zarrita` 0.7.4 assumes `data_type` is a string and
+clearest upstream case. `zarrita` 0.7.5 assumes `data_type` is a string and
 calls `dataType.match(...)` inside its metadata parser, so the failure happens
 during `open.v3` before any gridlook code runs. There is no registry or hook to
 intercept it — the only workaround would be rewriting the metadata JSON before
@@ -281,7 +313,7 @@ Not implemented. Roughly ascending in cost, with merge surface against upstream:
 2. **Register the trivial v3 codecs** (P1, top two rows). `quantize` and
    `astype` as small pure-JS codecs in new files, with
    `codecs.ts` gaining one `registry.set` line each. Plain JS, no WASM, and
-   directly upstreamable — it is the same shape as the existing `fletcher32.ts`.
+   directly upstreamable — it is the same shape as codecita's `Fletcher32Codec`.
 3. **Handle int64 and string variables explicitly** (P2, P3). Either convert
    BigInt properly and reject strings with a clear message, or reject both
    clearly. Touches `castDataVarToFloat32`, which upstream owns — a few lines.
@@ -330,9 +362,11 @@ should test only what it adds.
 `codecErrors.test.ts` uses `base64Bytes`, `v2ArrayMetadata` and `v2Store` from
 `tests/helpers/zarrStoreFixtures.ts`, and that shared helper is the only reason
 this branch edits `eslint.config.js` (§8). Upstream's own
-`tests/unit/lib/data/logBins.test.ts` already builds a synthetic v2 store
+`tests/unit/lib/data/logBins.test.ts` already built a synthetic v2 store
 inline as a `Map`, with the same computed-key trick for snake_case metadata
 names — so inlining is both about 25 lines and a closer match to house style.
+(That file left upstream with the codecita move; the inlining was done and the
+PR carries no fixture helper, so this is now history rather than a to-do.)
 That removes the `tests/helpers/` directory and the `boundaries/ignore` line
 from the PR, leaving it as one new source file, one new test file, and 13 lines
 across two files upstream owns.
@@ -345,14 +379,18 @@ They are **not** the same branch, and they must not be:
   14 commits ahead of upstream. It carries the fix, the survey tests, the
   fixture helper, the `eslint.config.js` line and this document. This is what
   merges into the fork's `main`.
-- `fix/codec-error-messages` — branched from **`upstream/main`**, carrying only
-  four files: `codecErrors.ts`, its test, and the two edited files. Basing it
-  on the fork's `main` instead would have dragged all 14 fork-only commits into
-  the pull request.
+- `fix/codec-error-messages` — branched from **`upstream/main`**, carrying
+  **six files**: `codecErrors.ts` and `errorHandling.ts`, their two tests, and
+  `useLog.ts` and `gridData.worker.ts`. It began as four; `errorHandling.ts`
+  and its test joined when review asked for `flattenErrorMessage` to move out
+  of the codec-specific file. Basing it on the fork's `main` instead would have
+  dragged all the fork-only commits into the pull request. The branch has since
+  had `upstream/main` merged into it, so it is current.
 
 The thing that makes a later `git merge upstream/main` safe is not the branch
-structure but the **file contents**: all four files are byte-identical between
-the two branches (same git blob hashes). When upstream merges the PR, upstream
+structure but the **file contents**: all six files are byte-identical between
+the two branches (same git blob hashes), re-verified after the 2026-09-16
+merge. When upstream merges the PR, upstream
 and the fork end up holding the same bytes, so git's three-way merge sees the
 same change on both sides and takes it once.
 
@@ -364,9 +402,11 @@ tree — the fork already had that content. The fork-only files survive untouche
 
 Two things would break that guarantee, and both are worth watching for:
 
-- **Editing one copy and not the other.** If a change is made to
-  `codecErrors.ts` or its test on one branch, make the identical change on the
-  other, or the next upstream merge conflicts.
+- **Editing one copy and not the other.** If a change is made to any of the six
+  on one branch, make the identical change on the other, or the next upstream
+  merge conflicts. This has been exercised twice — the rename round (fork
+  PR #19) and the float16 removal (fork PR #22) — and both times the mirror
+  commit onto `main` was part of the same session's work.
 - **Maintainers revising the code during review.** If they rename something or
   reword a message, upstream's copy diverges and the merge will conflict on
   exactly those files. That is normal and the resolution is simply to take
@@ -401,10 +441,14 @@ suspecting the network — §3's last bullet explains why the two look alike.
 
 ---
 
-## 8. Note on the one file this branch touches that upstream owns
+## 8. Note on the files upstream owns
 
-`eslint.config.js`, one line: `"tests/**"` added to `boundaries/ignore`, so the
-shared fixture helper under `tests/helpers/` does not trip
-`boundaries/no-unknown-files`. The existing ignore list already covers
-`**/*.test.ts`; this extends it to non-test files in the same tree. Everything
-else on this branch is new files.
+In the fork, one: `eslint.config.js`, one line — `"tests/**"` added to
+`boundaries/ignore`, so the shared fixture helper under `tests/helpers/` does
+not trip `boundaries/no-unknown-files`. The existing ignore list already covers
+`**/*.test.ts`; this extends it to non-test files in the same tree. It is not
+in the upstream PR, so upstream never touches it.
+
+In `fix/codec-error-messages`, three: `useLog.ts` (12 lines),
+`errorHandling.ts` (17) and `gridData.worker.ts` (2). Everything else on that
+branch is new files.

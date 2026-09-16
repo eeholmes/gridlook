@@ -57,6 +57,13 @@ Work aimed at upstream is branched from `upstream/main`, never from this fork's 
 
 If you touch import paths across these areas, check `eslint.config.js` before diverging.
 
+### Files in `public/`
+
+Reference them from script through `import.meta.env.BASE_URL`, never a leading
+slash: `vite.config.ts` sets `base: "./"`, so an absolute `/static/...` path
+404s silently anywhere but the domain root — GitHub Pages at `/gridlook/`, the
+JupyterHub proxy prefix in dev.
+
 ### Import alias
 
 `@/` resolves to `src/` (Vite alias + tsconfig `paths`). Prefer `import Foo from "@/lib/Foo"` over relative paths that cross directories.

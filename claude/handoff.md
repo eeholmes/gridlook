@@ -35,50 +35,27 @@ were opened as pull requests on `d70-t/gridlook`.
 | ~~`fix/colormap-swatch-base-url`~~ | `d70-t/gridlook#211` | **Merged upstream 2026-08-28**, and on `main` here via PR #11. The branch was deleted locally and on `origin` on 2026-09-16; nothing is left to do. |
 | `fix/codec-error-messages`         | `d70-t/gridlook#210` | **Open. The requested changes are all pushed; waiting on the maintainers.**                                                                         |
 
-**Both review rounds are done.** The first (`explainDataError` →
-`explainCodecError`, `flattenErrorMessage` moved to
-`src/utils/errorHandling.ts`) landed in `be2dfb0`, mirrored onto `main` by
-PR #19. The second — Karinon asked on 2026-08-31 that the float16 data-type
-case be dropped as speculative, since zarrita's float16 works on Chrome 135,
-Firefox 129 and Safari 26 — landed in `d517643` on 2026-09-16, mirrored onto
-`main` by PR #22. `explainCodecError` now explains codec errors and nothing
-else, which is what its name says. Nothing on our side is outstanding; the PR
-is waiting on the maintainers. **Karinon has not been told the change is
-pushed** — if the PR goes quiet, a one-line comment on it is the next move, and
-it needs `--repo d70-t/gridlook`.
+**Both review rounds are done** — the renames (fork PR #19) and the float16
+removal (fork PR #22) — so nothing on our side is outstanding. **Karinon has
+not been told the change is pushed**; if the PR goes quiet, a one-line comment
+is the next move, with `--repo d70-t/gridlook`.
 
-The files each branch touches are **byte-identical** to the copies on `main` —
-four of them since PR #19: `src/lib/data/codecErrors.ts`,
-`src/utils/errorHandling.ts` and both their test files. Change one and you must
-change the other, or the next `git merge upstream/main` conflicts. The details
-are in `claude/codec-support.md` §6.
+Six files are **byte-identical** between that branch and `main`. Change one and
+you must change the other, or the next `git merge upstream/main` conflicts.
+`claude/codec-support.md` §6 lists them and explains why.
 
 ### The 2026-09-16 upstream merge (PR #23)
 
-`main` now holds `upstream/main@7b2c126`. Three things it changed that older
-notes elsewhere may contradict:
+`main` holds `upstream/main@7b2c126`. What it changed underfoot is written up
+where it belongs — `CLAUDE.md` for the codecs now living in the `codecita`
+package, the HEALPix worker, and the second value-transform application point
+that worker forced; `claude/codec-support.md` §1 for the codec detail. Two
+things that are not code:
 
-1. **The extra codecs left this repository.** `fletcher32`,
-   `gribscan.rawgrib`, `log_bins` and `blosc2` now come from the **`codecita`**
-   package and `pcodec` from `@eeholmes/zarrita-pcodec` — which upstream
-   adopted — so `src/lib/data/codecs.ts` is seven `registry.set` lines and
-   `fletcher32.ts`, `gribscan.ts` and `logBins.ts` are gone.
-   `claude/codec-support.md` still describes the old layout and needs a pass.
-   `CLAUDE.md` was updated with the merge.
-2. **HEALPix geometry moved into a web worker** and `src/lib/data/healpix.ts`
-   was deleted; hover now reads the texture instead of a second copy of the
-   data. This silently broke the fork's `log10` transform on HEALPix, because
-   `setActiveValueTransform` sets main-thread module state that does not cross
-   a worker boundary. The fix is nine lines: `THealpixBuildRequest` carries
-   `valueTransform`, `Healpix.vue` fills it from `store.transformMode`, and
-   `healpix.worker.ts` applies it right after `decodeVariableDataInPlace`.
-   **Any future worker that decodes its own data needs the same treatment.**
-3. **`knip` runs in CI**, so an unused export now fails the build. Verify with
-   `npm run lint-ci && npm run typecheck && npx knip && npm run test && npm run build`.
-
-**Still unverified in a browser:** a HEALPix dataset with the transform set to
-`log10`, and hover values on it. The suite passes (303 tests) but nothing has
-exercised that path against real data.
+- **`knip` runs in CI**, so an unused export fails the build. Verify with
+  `npm run lint-ci && npm run typecheck && npx knip && npm run test && npm run build`.
+- **Unverified in a browser:** a HEALPix dataset with `log10` on, and hover
+  values. The suite passes (303 tests); nothing has touched real data.
 
 ### Candidates to propose upstream
 
@@ -98,20 +75,6 @@ codec-related; there is nothing here that is not there.
 Shipped in PR #9 (issue #5): the survey, its tests, and
 `src/lib/data/codecErrors.ts`, which names the codec when a dataset cannot be
 decoded. No decoders were added.
-
-## Colormap swatches
-
-Issue #10 (PR #11): the gradient thumbnails were requested from an absolute
-`/static/colormaps/<name>.webp`, whose leading slash ignores the `base` the
-app is built with. `vite.config.ts` sets `base: "./"`, so anywhere but the
-domain root — GitHub Pages at `/gridlook/`, the JupyterHub proxy prefix in dev
-— every swatch 404s silently. Both call sites now prefix
-`import.meta.env.BASE_URL`.
-
-**The rule this leaves behind:** files in `public/` are referenced from script
-through `import.meta.env.BASE_URL`, never a leading slash.
-`src/ui/overlays/controls/ColormapControls.vue` and
-`src/ui/overlays/HoverReadout.vue` were the only two such paths in `src/`.
 
 ## NASA Earthdata Icechunk stores (issue #13, shelved)
 
@@ -140,13 +103,10 @@ The audit behind issue #12 — how every entry in
 nineteen are tagged `broken`, and the five datasets added — is in
 **[`claude/catalog-audit.md`](./catalog-audit.md)**. It produced issues #15
 (dynamical.org chunk geometry), #16 (ORCESTRA HEALPix z12) and #17, all open.
-#17 was an omnibus and has since been split three ways, all three open and all
-three about naming what happened instead of drawing a blank: **#17** all-NaN
-(and string-valued) slices, **#20** picking a default variable that is neither
-flag-valued nor string-valued, **#21** a constant `min == max` slice. #20
-carries the key constraint — do not key off the `categorical_*` name; use the
-CF `flag_values` / `flag_meanings` attributes already captured by
-`sourceIndexing.ts`.
+#17 was an omnibus, since split into **#17** (all-NaN and string slices),
+**#20** (default variable) and **#21** (constant slice) — three faces of the
+same principle, name what happened instead of drawing a blank. The issues carry
+the measurements and constraints; do not restate them here.
 
 ## Other reference documents
 

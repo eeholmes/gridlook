@@ -8,13 +8,14 @@ own document under `claude/` is a pointer, not a retelling.
 ## Status
 
 - **`main`** is in sync with `origin/main` and the working tree is clean.
-  Nothing is in progress: session 8 only cleaned up and re-indexed this file.
+  Nothing is in progress. Session 8 finished the `d70-t/gridlook#210` review
+  round (PR #22), deleted two spent branches, and re-indexed this file.
 - **`main` is 35 commits ahead of `upstream/main` and 60 behind.** Upstream has
   moved fast since late August — read "Upstream has moved" below before
   starting anything that touches `src/lib/data/`.
 - **Open issues:** #1, #13 (shelved), #14, #15, #16, #17, #20, #21.
-  **Closed:** #2, #4, #5, #7, #10, #12. **PRs #3, #6, #8, #9, #11, #18 and #19
-  are merged; none are open.**
+  **Closed:** #2, #4, #5, #7, #10, #12. **PRs #3, #6, #8, #9, #11, #18, #19 and
+  #22 are merged; none are open.**
 - An empty `fix/all-nan-notice` branch was created for #17 in session 7 and
   never used; it was deleted in session 8. **No work has started on #17.**
 
@@ -26,17 +27,19 @@ were opened as pull requests on `d70-t/gridlook`.
 | Branch                             | Upstream PR          | State                                                                                                                                               |
 | ---------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ~~`fix/colormap-swatch-base-url`~~ | `d70-t/gridlook#211` | **Merged upstream 2026-08-28**, and on `main` here via PR #11. The branch was deleted locally and on `origin` on 2026-09-16; nothing is left to do. |
-| `fix/codec-error-messages`         | `d70-t/gridlook#210` | **Open, changes requested — the ball is in our court.**                                                                                             |
+| `fix/codec-error-messages`         | `d70-t/gridlook#210` | **Open. The requested changes are all pushed; waiting on the maintainers.**                                                                         |
 
-**The one outstanding action on #210:** Karinon asked (2026-08-31) that the
-float16 data-type case be dropped, on the grounds that it was speculative and
-legacy browsers are not worth supporting; Eli agreed and said he would clean it
-up. That has not been done. Removing it also makes `explainCodecError` exactly
-accurate, since the file would then explain nothing but codecs. The edit has to
-land on the branch **and** be mirrored onto `main` — see the byte-identical
-rule below. The earlier review round (`explainDataError` → `explainCodecError`,
-`flattenErrorMessage` moved to `src/utils/errorHandling.ts`) is already done, on
-the branch and on `main` via PR #19.
+**Both review rounds are done.** The first (`explainDataError` →
+`explainCodecError`, `flattenErrorMessage` moved to
+`src/utils/errorHandling.ts`) landed in `be2dfb0`, mirrored onto `main` by
+PR #19. The second — Karinon asked on 2026-08-31 that the float16 data-type
+case be dropped as speculative, since zarrita's float16 works on Chrome 135,
+Firefox 129 and Safari 26 — landed in `d517643` on 2026-09-16, mirrored onto
+`main` by PR #22. `explainCodecError` now explains codec errors and nothing
+else, which is what its name says. Nothing on our side is outstanding; the PR
+is waiting on the maintainers. **Karinon has not been told the change is
+pushed** — if the PR goes quiet, a one-line comment on it is the next move, and
+it needs `--repo d70-t/gridlook`.
 
 The files each branch touches are **byte-identical** to the copies on `main` —
 four of them since PR #19: `src/lib/data/codecErrors.ts`,
@@ -174,18 +177,14 @@ CF `flag_values` / `flag_meanings` attributes already captured by
 
 Nothing is in flight. The shortlist, most-ready first:
 
-1. **Finish the `d70-t/gridlook#210` review round** — drop the float16 case
-   from `src/lib/data/codecErrors.ts` on `fix/codec-error-messages`, mirror the
-   identical edit onto `main`, push both. Small, already agreed with the
-   maintainer, and it is the only thing blocking that PR.
-2. **#17, then #20 and #21** — the "say what happened instead of drawing a
+1. **#17, then #20 and #21** — the "say what happened instead of drawing a
    blank" trio from the catalog audit. #17 establishes the notice mechanism the
    other two reuse, so it goes first.
-3. **#14** — take the dataset title from the catalog when the store metadata
+2. **#14** — take the dataset title from the catalog when the store metadata
    has none.
-4. **Merge `upstream/main`** — 60 commits behind; read "Upstream has moved"
+3. **Merge `upstream/main`** — 60 commits behind; read "Upstream has moved"
    first.
-5. **#15 and #16** — dataset-specific loading failures, both diagnosed in
+4. **#15 and #16** — dataset-specific loading failures, both diagnosed in
    `claude/catalog-audit.md`.
 
 Or start a new session and say one of:

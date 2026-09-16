@@ -9,13 +9,19 @@ own document under `claude/` is a pointer, not a retelling.
 
 - **`main`** is in sync with `origin/main` and the working tree is clean.
   Nothing is in progress. Session 8 finished the `d70-t/gridlook#210` review
-  round (PR #22), deleted two spent branches, and re-indexed this file.
-- **`main` is 35 commits ahead of `upstream/main` and 60 behind.** Upstream has
-  moved fast since late August — read "Upstream has moved" below before
-  starting anything that touches `src/lib/data/`.
+  round (PR #22), merged 58 commits of `upstream/main` (PR #23), and deleted
+  three spent branches.
+- **`main` is 43 commits ahead of `upstream/main` and 0 behind**, as of
+  `upstream/main@7b2c126` on 2026-09-16. Keep it that way: the fork is a
+  staging area for work meant to go upstream, not a variant, so merging
+  upstream is routine maintenance rather than an event.
+- **The fork's whole delta is 36 files under `src/` and `tests/`**: 14
+  fork-only files and 22 edits to upstream-owned files totalling about 194
+  added lines, the largest being 37 lines in `src/ui/overlays/Controls.vue`.
+  That number is the thing to keep small.
 - **Open issues:** #1, #13 (shelved), #14, #15, #16, #17, #20, #21.
-  **Closed:** #2, #4, #5, #7, #10, #12. **PRs #3, #6, #8, #9, #11, #18, #19 and
-  #22 are merged; none are open.**
+  **Closed:** #2, #4, #5, #7, #10, #12. **PRs #3, #6, #8, #9, #11, #18, #19,
+  #22 and #23 are merged; none are open.**
 - An empty `fix/all-nan-notice` branch was created for #17 in session 7 and
   never used; it was deleted in session 8. **No work has started on #17.**
 
@@ -47,19 +53,39 @@ four of them since PR #19: `src/lib/data/codecErrors.ts`,
 change the other, or the next `git merge upstream/main` conflicts. The details
 are in `claude/codec-support.md` §6.
 
-### Upstream has moved — 58 commits since 2026-08-28
+### The 2026-09-16 upstream merge (PR #23)
 
-The next merge from `upstream/main` is substantial, and one commit matters more
-than the rest: **`9733566 chore(lib): moved codecs into separate package`**
-deleted `src/lib/data/fletcher32.ts`, `gribscan.ts` and `logBins.ts` along with
-their tests, leaving `codecs.ts` as a thin registration file. `CLAUDE.md` and
-`claude/codec-support.md` both describe those files as living in
-`src/lib/data/`, which is still true here but no longer true upstream — re-read
-both after merging, and expect the fork's codec additions to need rehoming.
+`main` now holds `upstream/main@7b2c126`. Three things it changed that older
+notes elsewhere may contradict:
 
-Other upstream work to know about before porting anything from `gridlook-xl`:
-UGRID support, a HEALPix web worker (levels 13 and 20 now load), local Zarr and
-local NetCDF loading, a distance scale, camera-zoom fixes, and `knip` in CI.
+1. **The extra codecs left this repository.** `fletcher32`,
+   `gribscan.rawgrib`, `log_bins` and `blosc2` now come from the **`codecita`**
+   package and `pcodec` from `@eeholmes/zarrita-pcodec` — which upstream
+   adopted — so `src/lib/data/codecs.ts` is seven `registry.set` lines and
+   `fletcher32.ts`, `gribscan.ts` and `logBins.ts` are gone.
+   `claude/codec-support.md` still describes the old layout and needs a pass.
+   `CLAUDE.md` was updated with the merge.
+2. **HEALPix geometry moved into a web worker** and `src/lib/data/healpix.ts`
+   was deleted; hover now reads the texture instead of a second copy of the
+   data. This silently broke the fork's `log10` transform on HEALPix, because
+   `setActiveValueTransform` sets main-thread module state that does not cross
+   a worker boundary. The fix is nine lines: `THealpixBuildRequest` carries
+   `valueTransform`, `Healpix.vue` fills it from `store.transformMode`, and
+   `healpix.worker.ts` applies it right after `decodeVariableDataInPlace`.
+   **Any future worker that decodes its own data needs the same treatment.**
+3. **`knip` runs in CI**, so an unused export now fails the build. Verify with
+   `npm run lint-ci && npm run typecheck && npx knip && npm run test && npm run build`.
+
+**Still unverified in a browser:** a HEALPix dataset with the transform set to
+`log10`, and hover values on it. The suite passes (303 tests) but nothing has
+exercised that path against real data.
+
+### Candidates to propose upstream
+
+Eli's aim is to have his additions land in gridlook itself rather than to carry
+them. In rough order of how upstreamable they look: the `log10` value
+transform, the virtual-chunk CORS diagnostic, and the extended catalog UI —
+that last one being the biggest and most opinionated.
 
 ## Codec and data-type support
 
@@ -182,9 +208,7 @@ Nothing is in flight. The shortlist, most-ready first:
    other two reuse, so it goes first.
 2. **#14** — take the dataset title from the catalog when the store metadata
    has none.
-3. **Merge `upstream/main`** — 60 commits behind; read "Upstream has moved"
-   first.
-4. **#15 and #16** — dataset-specific loading failures, both diagnosed in
+3. **#15 and #16** — dataset-specific loading failures, both diagnosed in
    `claude/catalog-audit.md`.
 
 Or start a new session and say one of:

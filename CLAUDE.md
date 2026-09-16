@@ -78,7 +78,7 @@ If you touch import paths across these areas, check `eslint.config.js` before di
 
 ### Grid rendering with web workers
 
-Each grid family under `src/lib/grids/` follows a consistent pattern of three files: `*Calculations.ts` (pure logic), `*.worker.ts` (Web Worker entry), and `*WorkerClient.ts` + `*WorkerProtocol.ts` (typed message boundary). Heavy geometry work (curvilinear, triangular, irregular, Delaunay, Gaussian-reduced) runs off the main thread. When adding a new grid renderer, mirror this triplet.
+Each grid family under `src/lib/grids/` follows a consistent pattern of three files: `*Calculations.ts` (pure logic), `*.worker.ts` (Web Worker entry), and `*WorkerClient.ts` + `*WorkerProtocol.ts` (typed message boundary). Heavy geometry work (curvilinear, triangular, irregular, Delaunay, Gaussian-reduced, HEALPix) runs off the main thread. When adding a new grid renderer, mirror this triplet.
 
 ### Data access
 
@@ -90,7 +90,7 @@ The reader-side workaround is a CORS-unblocking browser extension (gridlook does
 
 ### Codecs and data types
 
-Codec support comes from three stacked layers: `numcodecs.js` supplies the compiled compressors (blosc, lz4, zstd, gzip, zlib and nothing else), `zarrita` wires those in and adds the pure-JS v3 codecs, and `src/lib/data/codecs.ts` adds `fletcher32`, `gribscan.rawgrib`, `log_bins` and `pcodec`. Adding a codec means a new file shaped like `fletcher32.ts` plus one `registry.set` line — never a WebAssembly dependency in `src/lib`. When one is genuinely needed, the precedent is `@eeholmes/zarrita-pcodec`: a separate optional package registered through a lazy `() => import(...)` thunk, so the WebAssembly is fetched only if a dataset uses it. **[`claude/codec-support.md`](./claude/codec-support.md) is the surveyed inventory** of what decodes today, what does not, and which gaps belong to gridlook, zarrita or numcodecs.js.
+Codec support comes from three stacked layers: `numcodecs.js` supplies the compiled compressors (blosc, lz4, zstd, gzip, zlib and nothing else), `zarrita` wires those in and adds the pure-JS v3 codecs, and `src/lib/data/codecs.ts` registers the rest. As of the 2026-09-16 upstream merge those extra codecs live in packages rather than in this repository: `fletcher32`, `gribscan.rawgrib`, `log_bins` and `blosc2` come from `codecita`, and `pcodec` from `@eeholmes/zarrita-pcodec` — so `codecs.ts` is a handful of `registry.set` lines and the old `src/lib/data/fletcher32.ts`, `gribscan.ts` and `logBins.ts` are gone. Adding a codec means a package plus one `registry.set` line — never a WebAssembly dependency in `src/lib`; `@eeholmes/zarrita-pcodec` remains the precedent, an optional package whose WebAssembly is fetched only if a dataset uses it. **[`claude/codec-support.md`](./claude/codec-support.md) is the surveyed inventory** of what decodes today, what does not, and which gaps belong to gridlook, zarrita or numcodecs.js.
 
 A codec gridlook cannot decode **never fails at open time**. The store opens, every variable lists, and the failure arrives on the first chunk read — indistinguishable at a glance from the CORS-blocked virtual chunks above. When triaging a dataset that lists its variables but will not plot, check the array metadata's codec list before suspecting the network.
 
@@ -100,7 +100,7 @@ A codec gridlook cannot decode **never fails at open time**. The store opens, ev
 
 ### Value transforms
 
-`src/lib/data/valueTransform.ts` holds the registry of element-wise data transforms (`linear`, `log10`). A transform is applied at exactly one point — `decodeVariableDataAndGetBounds` in `src/lib/data/variableDecoding.ts`, right after CF decoding — so data bounds, histograms, textures and hover values all derive from transformed data and the grid renderers need no changes. Because `src/lib` may not import the store, `useGridDataLoader` pushes the selected mode down via `setActiveValueTransform` before each load; it is read as a defaulted parameter, and callers that must stay linear (streamline vector components) pass `VALUE_TRANSFORMS.LINEAR` explicitly. Adding a transform means one registry entry plus its formula in `transformValue`.
+`src/lib/data/valueTransform.ts` holds the registry of element-wise data transforms (`linear`, `log10`). A transform is applied right after CF decoding, so data bounds, histograms, textures and hover values all derive from transformed data and the grid renderers need no changes. That is one point for every grid but HEALPix — `decodeVariableDataAndGetBounds` in `src/lib/data/variableDecoding.ts` — and a second for HEALPix, whose faces are decoded inside `src/lib/grids/healpix.worker.ts`: the mode cannot reach a worker through module state, so `THealpixBuildRequest.valueTransform` carries it and the worker applies it immediately after `decodeVariableDataInPlace`. A new transform needs no change there, but a new worker that decodes its own data does. Because `src/lib` may not import the store, `useGridDataLoader` pushes the selected mode down via `setActiveValueTransform` before each load; it is read as a defaulted parameter, and callers that must stay linear (streamline vector components) pass `VALUE_TRANSFORMS.LINEAR` explicitly. Adding a transform means one registry entry plus its formula in `transformValue`.
 
 ### State
 

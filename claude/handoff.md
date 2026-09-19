@@ -25,6 +25,20 @@ own document under `claude/` is a pointer, not a retelling.
 - An empty `fix/all-nan-notice` branch was created for #17 in session 7 and
   never used; it was deleted in session 8. **No work has started on #17.**
 
+- **Downstream, as of 2026-09-19: six published viewers are builds of this `main`**
+  (`b3c42b1`), made by `publish_viewer.py` in `ocean-icechunks/icechunks` (gobai-o2,
+  noaa-ohc, oa-indicators, noaa-oisst) and `ocean-icechunks/hycom` (hycom, and its scratch
+  copy). Two things those sessions learned that concern this repo. **This clone had been
+  98 commits behind `origin/main` on the hub where they were built** — it is per machine —
+  so the first round of viewers shipped without the log10 transform, the swatch fix and the
+  CORS notice; the publishers now fetch and refuse a stale checkout. And
+  **`DEFAULT_DATASET` in `HashGlobeView.vue` is hard-coded** to the OGS demo store, so a
+  published viewer opened without a `#…` fragment shows that instead of its own catalog's
+  first entry; the publishers work around it by injecting a default hash into the built
+  `index.html`. Taking the default from the first catalog entry would retire the
+  workaround. No issue has been filed for it. This hub has no Node 24; the build ran on
+  Node 20.19.6.
+
 ### Upstream proposals — one merged, one waiting on us
 
 Both branches are pushed to the fork only, branched from `upstream/main`, and

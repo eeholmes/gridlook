@@ -73,7 +73,7 @@ things that are not code:
 
 ### Candidates to propose upstream
 
-Eli's aim is to have his additions land in gridlook itself rather than to carry
+Eli's aim is to have her additions land in gridlook itself rather than to carry
 them. In rough order of how upstreamable they look: the `log10` value
 transform, the virtual-chunk CORS diagnostic, and the extended catalog UI —
 that last one being the biggest and most opinionated.

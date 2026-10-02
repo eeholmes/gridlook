@@ -1,6 +1,12 @@
-# CLAUDE.md
+# CLAUDE.md — this fork's notes
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+@AGENTS.md
+
+The line above imports `AGENTS.md`, upstream's coding guidelines from
+`d70-t/gridlook`. This file holds this fork's own notes. Claude Code reads it as
+`CLAUDE.md`; Antigravity reads `AGENTS.md` on its own and this file through
+`GEMINI.md`, a symlink to it. Put fork-only guidance here, never in `AGENTS.md`:
+that file is upstream's, and every fork edit to it is a future merge conflict.
 
 > **Before starting new work, read [`claude/handoff.md`](./claude/handoff.md).** It carries the most recent session's state, what shipped, and the shortlist for next steps. The full archaeology of the `eeholmes/gridlook-xl` fork lives in [`claude/comparison.md`](./claude/comparison.md), and the surveyed state of Zarr codec and data-type support in [`claude/codec-support.md`](./claude/codec-support.md).
 

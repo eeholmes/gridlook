@@ -1,4 +1,4 @@
-# Handoff — 2026-09-16 (session 8)
+# Handoff — 2026-10-14 (session 9)
 
 Read this at the start of a new session. Cross-referenced by `CLAUDE.md`.
 
@@ -8,11 +8,14 @@ own document under `claude/` is a pointer, not a retelling.
 ## Status
 
 - **`main`** is in sync with `origin/main` and the working tree is clean.
-  Nothing is in progress. Session 8 finished the `d70-t/gridlook#210` review
+  Nothing is in progress. Session 9 made no code changes: it reviewed
+  `d70-t/gridlook#235` (below) and re-added the missing `upstream` remote to
+  this hub's clone. Session 8 finished the `d70-t/gridlook#210` review
   round (PR #22), merged 58 commits of `upstream/main` (PR #23), and deleted
   three spent branches.
-- **`main` is 43 commits ahead of `upstream/main` and 0 behind**, as of
-  `upstream/main@7b2c126` on 2026-09-16. Keep it that way: the fork is a
+- **`main` is 63 commits behind `upstream/main`** (`22be46b`, 2026-10-12) and
+  49 ahead, as of 2026-10-14; the last merge was `7b2c126` on 2026-09-16. An
+  upstream merge is due. Keep the gap small: the fork is a
   staging area for work meant to go upstream, not a variant, so merging
   upstream is routine maintenance rather than an event.
 - **The fork's whole delta is 36 files under `src/` and `tests/`**: 14
@@ -57,6 +60,20 @@ is the next move, with `--repo d70-t/gridlook`.
 Six files are **byte-identical** between that branch and `main`. Change one and
 you must change the other, or the next `git merge upstream/main` conflicts.
 `claude/codec-support.md` §6 lists them and explains why.
+
+### Reviews we gave upstream
+
+- **`d70-t/gridlook#235`** (espg, multiscale level switching + level-of-detail
+  loading). Session 9 tested whether it breaks non-pyramid groups and
+  [commented](https://github.com/d70-t/gridlook/pull/235#issuecomment-6158473037).
+  Verdict: stores without a `multiscales` attribute index exactly as before
+  (all `grouped` catalog entries, Icechunk group paths, JSON index). Two
+  issues raised: the six ndpyramid web-mercator pyramids in our catalog get
+  levels but no resolution, so zoom never switches level; and a `multiscales`
+  group drops its own arrays and any non-level sibling groups. Eli confirmed
+  both in a browser. EOPF Sentinel-2 was left out of the comment on purpose.
+  Method: the catalog-audit Node pass, indexing each URL on the PR and on its
+  base and diffing the results.
 
 ### The 2026-09-16 upstream merge (PR #23)
 

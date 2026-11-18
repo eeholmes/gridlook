@@ -43,6 +43,10 @@ did not render; it now shows as a pill, red when the value is `broken`, and is
 included in the search haystack, so typing "broken" filters to exactly those
 entries.
 
+> **Since 2026-11-18 (eeholmes/gridlook#28)** the component is gone. The
+> status word is `tags.tag` and upstream's catalog panel offers it as a "Tag"
+> filter, but `broken` is no longer red.
+
 **Eleven entries were tagged `broken`, given a `BROKEN - ` title prefix and
 moved to the end of the file:**
 

@@ -87,7 +87,7 @@ that worker forced; `claude/codec-support.md` §1 for the codec detail. Two
 things that are not code:
 
 - **`knip` runs in CI**, so an unused export fails the build. Verify with
-  `npm run lint-ci && npm run typecheck && npx knip && npm run test && npm run build`.
+  `npm run lint-ci && npm run typecheck && npm run knip && npm run test && npm run build`.
 - **Unverified in a browser:** a HEALPix dataset with `log10` on, and hover
   values. The suite passes (303 tests); nothing has touched real data.
 

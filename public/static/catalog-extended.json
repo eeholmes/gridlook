@@ -494,7 +494,7 @@
     },
     {
       "title": "Alaska HRRR",
-      "url": "https://data.source.coop/bkr/dmi/alaska_hrrr.icechunk::catalog=static/catalog.json::projectionCenterLat=0::projectionCenterLon=0::varname=10_metre_u_wind_component_at_10.0m::dimIndices_time=0::dimIndices_step=0::camerastate=Jcw5DsJAEETRuzgej7q7euUqiICAwInNYiLE3RnkoJL60vtM9-217Mu2TqfznB0I8gwhUStom6UzFRjlmZXkkY3RzdxLTMnK_NKmx_u6357rwVAXIQqgSj3VTIdDnYMhKVzKgI30Py2rRFyRNFbcqIdFOMyZODQG__0B::dimIndices_level=0::projection=nearside_perspective",
+      "url": "https://data.source.coop/bkr/dmi/alaska_hrrr.icechunk::catalog=static/catalog.json::projectionCenterLat=0::projectionCenterLon=0::varname=10m_u_component_of_wind::dimIndices_time=0::dimIndices_step=0::camerastate=Jcw5DsJAEETRuzgej7q7euUqiICAwInNYiLE3RnkoJL60vtM9-217Mu2TqfznB0I8gwhUStom6UzFRjlmZXkkY3RzdxLTMnK_NKmx_u6357rwVAXIQqgSj3VTIdDnYMhKVzKgI30Py2rRFyRNFbcqIdFOMyZODQG__0B::projection=nearside_perspective",
       "format": "Zarr v3",
       "access": "icechunk",
       "convention": null,
@@ -542,6 +542,117 @@
       "access": "icechunk",
       "convention": null,
       "layout": "grouped",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "HYCOM GOFS 3.1 Global Ocean Reanalysis (1/12°, 3-hourly, 1994–2015)",
+      "url": "icechunk+https://data.source.coop/ocean-icechunks/hycom/hycom-gofs-3pt1-reanalysis::varname=water_temp",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "NOAA OISST v2.1 Daily Sea Surface Temperature (1/4°)",
+      "url": "icechunk+https://data.source.coop/ocean-icechunks/noaa-oisst/oisst.icechunk::varname=daily/sst",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "grouped",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "NOAA OISST v2.1 Monthly SST Anomaly Statistics (1/4°)",
+      "url": "icechunk+https://data.source.coop/ocean-icechunks/noaa-oisst/oisst.icechunk::varname=monthly/anom_mean",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "grouped",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "NOAA Gulf of Maine OFS (GoMOFS) Nowcast, Surface Fields",
+      "url": "icechunk+https://data.source.coop/ocean-icechunks/noaa-gomofs/timeseries-2d::varname=temp_sur",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "curvilinear",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "NOAA Gulf of Maine OFS (GoMOFS) Nowcast, 3D Fields",
+      "url": "icechunk+https://data.source.coop/ocean-icechunks/noaa-gomofs/timeseries-3d::varname=temp",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "curvilinear",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "NECOFS WaveWatch III Wave Forecast (Northeast Coastal Ocean Forecast System)",
+      "url": "icechunk+https://data.source.coop/ocean-icechunks/necofs-waves/icechunk/necofs_wave_forecast::varname=hs",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "irregular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "NERACOOS NECOFS Casco Bay Ocean Forecast",
+      "url": "icechunk+https://data.source.coop/ocean-icechunks/neracoos-necofs-casco/icechunk/casco_ocean_forecast::varname=temp",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "irregular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "PacIOOS ROMS Main Hawaiian Islands Ocean Forecast",
+      "url": "icechunk+https://data.source.coop/ocean-icechunks/pacioos/roms_hiig/icechunk::varname=temp",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "PacIOOS ROMS Main Hawaiian Islands Ocean Reanalysis",
+      "url": "icechunk+https://data.source.coop/ocean-icechunks/pacioos/roms_hiig_reanalysis/icechunk::varname=temp",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "PacIOOS WaveWatch III Hawaii Regional Wave Model",
+      "url": "icechunk+https://data.source.coop/ocean-icechunks/pacioos/ww3_hawaii/icechunk::varname=Thgt",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
+      "grid": "regular",
+      "crs": "EPSG:4326"
+    },
+    {
+      "title": "BROKEN - NCEI Ocean Acidification Indicators Climatology, North American Margins",
+      "url": "icechunk+https://data.source.coop/ocean-icechunks/oa-indicators/climatology::varname=OmegaA_an",
+      "tag": "broken",
+      "format": "Zarr v3",
+      "access": "icechunk",
+      "convention": null,
+      "layout": "simple",
       "grid": "regular",
       "crs": "EPSG:4326"
     },

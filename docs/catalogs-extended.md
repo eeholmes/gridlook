@@ -1,53 +1,35 @@
-# Extended Catalog Format (fork-only)
+# The fork's default catalog (fork-only)
 
-This is a superset of the format described in [`catalogs.md`](catalogs.md), used only in this fork so that catalog entries can carry richer metadata for filtering. The default catalog at `public/static/catalog.json` still uses the plain format; the extended UI only activates when a loaded catalog contains any of the extended fields.
+This fork opens `public/static/catalog-extended.json` by default (`DEFAULT_CATALOG` in `src/views/HashGlobeView.vue`) instead of upstream's `public/static/catalog.json`. It is a plain catalog in the format of [`catalogs.md`](catalogs.md). Its metadata lives in upstream's `tags`, so upstream's catalog panel gives it one filter dropdown per key, plus sort-by-tag. The fork has no catalog UI of its own.
 
-## Extra dataset fields
+Until the v1.8.1 upstream merge, these fields sat at the top level of each entry and were rendered by a fork-only `CatalogPanelExtended.vue`. Upstream's `tags` covers the same need, so the fields moved into `tags` and the component was removed (eeholmes/gridlook#28).
 
-Each entry in `datasets` may also include:
+## Tag keys
 
-- `format` — e.g. `Zarr v2`, `Zarr v3`, `Icechunk`
-- `access` — e.g. `direct`, `icechunk`
-- `layout` — e.g. `simple`, `grouped`, `multiscale`
-- `grid` — e.g. `regular`, `curvilinear`, `healpix`, `triangular`, `irregular`, `gaussian_reduced`
-- `convention` — e.g. `GeoZarr`, or `null`
-- `crs` — e.g. `EPSG:4326`, `EPSG:3031`
-- `tag` — a short status word, shared with the plain catalog format; `broken` is
-  rendered as a red pill so entries that no longer load stand out
+Every entry has `format`, `access`, `layout`, `grid` and `crs`. `convention` and `tag` appear only where they apply.
 
-All fields are optional. Any subset can be populated per entry.
-
-## Behavior
-
-When the loaded catalog contains at least one entry with any extended field, `CatalogPanel.vue` delegates rendering to `CatalogPanelExtended.vue`, which:
-
-- shows a filter dropdown for each field that has at least one value in the dataset,
-- renders per-entry tag pills for the populated fields, including `tag`,
-- offers a per-entry Copy URL button that strips `::…` state suffixes and the `icechunk+` prefix.
-
-When no entry has any extended field, the existing panel is rendered unchanged.
+- `format`: `Zarr v2` or `Zarr v3`
+- `access`: `direct` or `icechunk`
+- `layout`: `simple`, `grouped` or `multiscale`
+- `grid`: e.g. `regular`, `curvilinear`, `healpix`, `triangular`, `irregular`, `polar_stereographic`
+- `convention`: `GeoZarr`. Omitted when the store follows no convention, because tag values must be strings.
+- `crs`: e.g. `EPSG:4326`, `EPSG:3031`
+- `tag`: a status word, `broken` or `needs CORS extension`. This is the legacy single `tag`, moved under `tags` because `parseCatalog` ignores a top-level `tag` once `tags` is present.
 
 ## Example
 
 ```json
 {
-  "type": "gridlook_catalog",
-  "title": "Extended Catalog",
-  "datasets": [
-    {
-      "title": "ICON Daily Mean",
-      "url": "https://example.org/icon/daily_mean.zarr",
-      "format": "Zarr v3",
-      "access": "direct",
-      "layout": "grouped",
-      "grid": "healpix",
-      "convention": null,
-      "crs": "EPSG:4326"
-    }
-  ]
+  "title": "ICON Daily Mean",
+  "url": "https://example.org/icon/daily_mean.zarr",
+  "tags": {
+    "format": "Zarr v3",
+    "access": "direct",
+    "layout": "grouped",
+    "grid": "healpix",
+    "crs": "EPSG:4326"
+  }
 }
 ```
 
-## Test catalog
-
-A working extended catalog is shipped at `public/static/catalog-extended.json`. Load it via the "Open dataset" dialog (paste `static/catalog-extended.json`).
+`tests/unit/utils/catalogExtended.test.ts` checks that every entry parses with its fields as tags.

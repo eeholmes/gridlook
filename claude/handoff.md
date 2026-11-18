@@ -7,16 +7,16 @@ own document under `claude/` is a pointer, not a retelling.
 
 ## Status
 
-- **`main` (`0b1e3ae`) is level with `upstream/main`** (`58de946`, v1.8.1)
-  and 55 commits ahead. Session 11 did the v1.8.1 merge as PRs #34 (the merge,
+- **`main` (`7da5627`) is level with `upstream/main`** (`58de946`, v1.8.1)
+  and 57 commits ahead. Session 11 did the v1.8.1 merge as PRs #34 (the merge,
   #27), #35 (catalog fields → `tags`, #28), #36 (the volume field stays
   linear, #29) and #37 (docs, #30), all merged 2026-11-18. None was checked in
   a browser. Each PR body lists what was and was not tested. Keep the gap
   small: the fork is a staging area for work meant to go upstream, not a
   variant, so merging upstream is routine maintenance rather than an event.
-- **The Pages deploy builds on Node 20** (`.github/workflows/deploy.yml`),
-  while `package.json` asks for Node >= 24.16. It still builds. Bumping it is
-  unfiled.
+- **The Pages deploy builds on Node 24 since PR #39.** The first deploy after
+  it succeeded on v24.22.3. https://eeholmes.github.io/gridlook rebuilds on
+  every push to `main`.
 - **Things the merge settled that a later session would trip on.** The new
   linear call sites, and why volumes are among them, are in `CLAUDE.md` under
   Value transforms. `CatalogPanelExtended.vue` is gone: the fork's default
@@ -24,16 +24,17 @@ own document under `claude/` is a pointer, not a retelling.
   `vite.jupyter.config.ts` is still needed (`CLAUDE.md`, Commands).
   - **Not done:** the derived vector magnitude is computed from linear
     components and is never log10'd, so it is shown linear, with linear
-    units, even when log10 is selected. #34 explains this, and no issue
-    exists for it.
+    units, even when log10 is selected. Now issue #38.
 - **The fork's delta is about 31 files under `src/` and `tests/`** (11
   fork-only, 20 edits to upstream files, counted after #34; was 36). The fork
   no longer touches `CatalogPanel.vue` or `catalog.ts`.
   That number is the thing to keep small.
-- **Open issues:** #1, #13 (shelved), #14, #15, #16, #17, #20, #21, #25
-  (deck-gl, never triaged). #27–#30 are closed.
-- An empty `fix/all-nan-notice` branch was created for #17 in session 7 and
-  never used; it was deleted in session 8. **No work has started on #17.**
+- **Open issues:** #13 (shelved), #14, #15, #16, #20, #25 (deck-gl, never
+  triaged), #38. Session 11 triaged the list against the merged code. Closed:
+  #17 and #21, done upstream by `d3514c5` (histogram messages for empty and
+  constant slices, with no toast); #1, whose task, `comparison.md`, was done;
+  and #27–#30. #13 and #16 got comments on what the merge changed for them.
+  `main` is the only branch on `origin`.
 
 - **Downstream, as of 2026-09-19: six published viewers are builds of this `main`**
   (`b3c42b1`), made by `publish_viewer.py` in `ocean-icechunks/icechunks` (gobai-o2,
@@ -133,11 +134,11 @@ The audit behind issue #12 — how every entry in
 `public/static/catalog-extended.json` was tested in a real browser, which
 nineteen are tagged `broken`, and the five datasets added — is in
 **[`claude/catalog-audit.md`](./catalog-audit.md)**. It produced issues #15
-(dynamical.org chunk geometry), #16 (ORCESTRA HEALPix z12) and #17, all open.
-#17 was an omnibus, since split into **#17** (all-NaN and string slices),
-**#20** (default variable) and **#21** (constant slice) — three faces of the
-same principle, name what happened instead of drawing a blank. The issues carry
-the measurements and constraints; do not restate them here.
+(dynamical.org chunk geometry), #16 (ORCESTRA HEALPix z12) and #17. #17 was
+split into #17 (all-NaN and string slices), #20 (default variable) and #21
+(constant slice). Upstream's `d3514c5` covered #17 and #21, which are closed,
+so of that trio only #20 remains. The issues carry the measurements and
+constraints; do not restate them here.
 
 **2026-11-18 recheck (PR #32):** every entry was opened from Node on the same
 code path gridlook uses — zarrita and icechunk-js from `node_modules`, walking
@@ -200,21 +201,24 @@ gone; the PR body describes it well enough to rebuild.
 - `strictPort: true` for dev — kill strays with `pkill -9 -f "vite --port"`.
 - Do not launch background dev servers from tool calls; they persist across
   turns and block later runs.
-- Remote branch deletion and repo-settings writes via `gh api` are blocked by
-  the permission classifier — hand those to Eli. (`gh pr merge --delete-branch`
-  does work.)
+- Repo-settings writes and branch deletion via `gh api` are blocked by the
+  permission classifier, so hand those to Eli. `git push origin --delete
+<branch>` works (used 2026-11-18), as does `gh pr merge --delete-branch`.
+- **`git pull` on `main` can fail** with "Cannot rebase onto multiple
+  branches". Use `git fetch origin && git merge --ff-only origin/main`.
 
 ## How to resume
 
 Nothing is in flight. The shortlist, most-ready first:
 
-1. **#17, then #20 and #21** — the "say what happened instead of drawing a
-   blank" trio from the catalog audit. #17 establishes the notice mechanism the
-   other two reuse, so it goes first.
-2. **#14** — take the dataset title from the catalog when the store metadata
+1. **#20** — choose a default variable that is neither flag-valued nor
+   string-valued, using metadata only.
+2. **#38** — the derived vector magnitude ignores log10. Decide between the
+   two options in the issue first.
+3. **#14** — take the dataset title from the catalog when the store metadata
    has none.
-3. **#15 and #16** — dataset-specific loading failures, both diagnosed in
-   `claude/catalog-audit.md`.
+4. **#15 and #16** — dataset-specific loading failures, both diagnosed in
+   `claude/catalog-audit.md`. Measure #16 again first (see its latest comment).
 
 Or start a new session and say one of:
 

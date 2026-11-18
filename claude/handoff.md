@@ -1,4 +1,4 @@
-# Handoff — 2026-10-14 (session 9)
+# Handoff — 2026-11-18 (session 11)
 
 Read this at the start of a new session. Cross-referenced by `CLAUDE.md`.
 
@@ -7,24 +7,31 @@ own document under `claude/` is a pointer, not a retelling.
 
 ## Status
 
-- **`main`** is in sync with `origin/main` and the working tree is clean.
-  Nothing is in progress. Session 9 made no code changes: it reviewed
-  `d70-t/gridlook#235` (below) and re-added the missing `upstream` remote to
-  this hub's clone. Session 8 finished the `d70-t/gridlook#210` review
-  round (PR #22), merged 58 commits of `upstream/main` (PR #23), and deleted
-  three spent branches.
-- **`main` is 63 commits behind `upstream/main`** (`22be46b`, 2026-10-12) and
-  49 ahead, as of 2026-10-14; the last merge was `7b2c126` on 2026-09-16. An
-  upstream merge is due. Keep the gap small: the fork is a
-  staging area for work meant to go upstream, not a variant, so merging
-  upstream is routine maintenance rather than an event.
-- **The fork's whole delta is 36 files under `src/` and `tests/`**: 14
-  fork-only files and 22 edits to upstream-owned files totalling about 194
-  added lines, the largest being 37 lines in `src/ui/overlays/Controls.vue`.
+- **`main` (`0b1e3ae`) is level with `upstream/main`** (`58de946`, v1.8.1)
+  and 55 commits ahead. Session 11 did the v1.8.1 merge as PRs #34 (the merge,
+  #27), #35 (catalog fields → `tags`, #28), #36 (the volume field stays
+  linear, #29) and #37 (docs, #30), all merged 2026-11-18. None was checked in
+  a browser. Each PR body lists what was and was not tested. Keep the gap
+  small: the fork is a staging area for work meant to go upstream, not a
+  variant, so merging upstream is routine maintenance rather than an event.
+- **The Pages deploy builds on Node 20** (`.github/workflows/deploy.yml`),
+  while `package.json` asks for Node >= 24.16. It still builds. Bumping it is
+  unfiled.
+- **Things the merge settled that a later session would trip on.** The new
+  linear call sites, and why volumes are among them, are in `CLAUDE.md` under
+  Value transforms. `CatalogPanelExtended.vue` is gone: the fork's default
+  catalog now uses upstream `tags` (`docs/catalogs-extended.md`).
+  `vite.jupyter.config.ts` is still needed (`CLAUDE.md`, Commands).
+  - **Not done:** the derived vector magnitude is computed from linear
+    components and is never log10'd, so it is shown linear, with linear
+    units, even when log10 is selected. #34 explains this, and no issue
+    exists for it.
+- **The fork's delta is about 31 files under `src/` and `tests/`** (11
+  fork-only, 20 edits to upstream files, counted after #34; was 36). The fork
+  no longer touches `CatalogPanel.vue` or `catalog.ts`.
   That number is the thing to keep small.
-- **Open issues:** #1, #13 (shelved), #14, #15, #16, #17, #20, #21.
-  **Closed:** #2, #4, #5, #7, #10, #12. **PRs #3, #6, #8, #9, #11, #18, #19,
-  #22 and #23 are merged; none are open.**
+- **Open issues:** #1, #13 (shelved), #14, #15, #16, #17, #20, #21, #25
+  (deck-gl, never triaged). #27–#30 are closed.
 - An empty `fix/all-nan-notice` branch was created for #17 in session 7 and
   never used; it was deleted in session 8. **No work has started on #17.**
 
@@ -39,10 +46,10 @@ own document under `claude/` is a pointer, not a retelling.
   published viewer opened without a `#…` fragment shows that instead of its own catalog's
   first entry; the publishers work around it by injecting a default hash into the built
   `index.html`. Taking the default from the first catalog entry would retire the
-  workaround. No issue has been filed for it. This hub has no Node 24; the build ran on
-  Node 20.19.6.
+  workaround. No issue has been filed for it. Those builds ran on Node 20.19.6, on a hub
+  without Node 24.
 
-### Upstream proposals — one merged, one waiting on us
+### Upstream proposals — both merged
 
 Both branches are pushed to the fork only, branched from `upstream/main`, and
 were opened as pull requests on `d70-t/gridlook`.
@@ -50,16 +57,9 @@ were opened as pull requests on `d70-t/gridlook`.
 | Branch                             | Upstream PR          | State                                                                                                                                               |
 | ---------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ~~`fix/colormap-swatch-base-url`~~ | `d70-t/gridlook#211` | **Merged upstream 2026-08-28**, and on `main` here via PR #11. The branch was deleted locally and on `origin` on 2026-09-16; nothing is left to do. |
-| `fix/codec-error-messages`         | `d70-t/gridlook#210` | **Open. The requested changes are all pushed; waiting on the maintainers.**                                                                         |
+| `fix/codec-error-messages`         | `d70-t/gridlook#210` | **Merged upstream 2026-09-17.** Its files on `upstream/main` are identical to the fork's (checked 2026-11-18), so they merge cleanly in #27.        |
 
-**Both review rounds are done** — the renames (fork PR #19) and the float16
-removal (fork PR #22) — so nothing on our side is outstanding. **Karinon has
-not been told the change is pushed**; if the PR goes quiet, a one-line comment
-is the next move, with `--repo d70-t/gridlook`.
-
-Six files are **byte-identical** between that branch and `main`. Change one and
-you must change the other, or the next `git merge upstream/main` conflicts.
-`claude/codec-support.md` §6 lists them and explains why.
+The **byte-identical rule** is retired in #37: those files are upstream-owned now.
 
 ### Reviews we gave upstream
 
@@ -84,7 +84,7 @@ that worker forced; `claude/codec-support.md` §1 for the codec detail. Two
 things that are not code:
 
 - **`knip` runs in CI**, so an unused export fails the build. Verify with
-  `npm run lint-ci && npm run typecheck && npx knip && npm run test && npm run build`.
+  `npm run lint-ci && npm run typecheck && npm run knip && npm run test && npm run build`.
 - **Unverified in a browser:** a HEALPix dataset with `log10` on, and hover
   values. The suite passes (303 tests); nothing has touched real data.
 
@@ -139,6 +139,14 @@ nineteen are tagged `broken`, and the five datasets added — is in
 same principle, name what happened instead of drawing a blank. The issues carry
 the measurements and constraints; do not restate them here.
 
+**2026-11-18 recheck (PR #32):** every entry was opened from Node on the same
+code path gridlook uses — zarrita and icechunk-js from `node_modules`, walking
+up an Icechunk URL to the repo root, and falling back to the JSON index that
+the eerie `/stac` items use. A plain `curl` probe of metadata files reports
+false failures for all three, so do not use one. 74 of 75 opened; 11
+`ocean-icechunks` entries were added. The probe script was scratch and is
+gone; the PR body describes it well enough to rebuild.
+
 ## Other reference documents
 
 - **[`claude/catalog-audit.md`](./catalog-audit.md)** — as above.
@@ -171,14 +179,20 @@ the measurements and constraints; do not restate them here.
 
 ## Environment notes
 
-- **Node is already installed**; if `npm` looks missing, suspect the shell.
-  `~/.local/opt/node-v24.20.0-linux-x64` persists across hubs. Tool shells may
-  start without it on `PATH` — prepend
+- **Node 24 lives in the home directory, and a hub can have a different
+  home.** On 2026-11-18 `~/.local/opt/node-v24.20.0-linux-x64` was missing on
+  this hub (home on NFS `/prod/eeholmes`) and was reinstalled from the
+  nodejs.org tarball (checksum verified), linked into `~/.local/bin`. The image
+  itself ships only conda Node 22 and apt Node 18 — see
+  `nmfs-opensci/py-rocket-base#321`. Login shells get `~/.local/bin` from
+  `~/.profile`; there is no `~/.bash_profile`, whatever `CLAUDE.md` says (fixed
+  in #30). Tool shells may still start without it — prepend
   `export PATH="$HOME/.local/opt/node-v24.20.0-linux-x64/bin:$PATH"`.
 - **`gh` can default to the upstream repo.** Always pass
   `--repo eeholmes/gridlook`, especially for anything that writes. See
   `CLAUDE.md` under "Remotes, and always passing `--repo` to `gh`".
-- **Python has `numpy`, `numcodecs` 0.16.5 and `zarr` 3.3.0.** Useful for
+- **Python has `numpy`, `numcodecs`, `zarr` 3.4.2 and `icechunk` 2.3.1**
+  (`icechunk.http_storage(url)` opens a source.coop repo). Useful for
   generating reference bytes and metadata fixtures for tests rather than
   hand-rolling them.
 - Local dev is behind JupyterHub — the dev URL uses `/proxy/absolute/3000/`.

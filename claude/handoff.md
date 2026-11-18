@@ -1,4 +1,4 @@
-# Handoff — 2026-11-18 (sessions 10 and 11)
+# Handoff — 2026-11-18 (session 11)
 
 Read this at the start of a new session. Cross-referenced by `CLAUDE.md`.
 
@@ -7,18 +7,16 @@ own document under `claude/` is a pointer, not a retelling.
 
 ## Status
 
-- **The v1.8.1 upstream merge is written and waiting on Eli's review
-  (session 11).** Four PRs, one per issue. #34 is the merge itself (#27). It
-  targets `main`. **#35** (#28, catalog fields → `tags`), **#36** (#29, the
-  volume field stays linear) and **#37** (#30, docs) are each stacked on
-  #34's branch `chore/merge-upstream-v1.8.1`. **Merge #34 first.** GitHub
-  then retargets the other three to `main`. Each PR body says what was and
-  was not tested. None was opened in a browser. Lint, typecheck, `npm run knip`,
-  the tests and the build pass on all four, and CI is green on #34.
-- **Until #34 merges, `main` (`dcb5e55`) is 158 commits behind
-  `upstream/main`** (`58de946`, v1.8.1). Keep the gap small: the fork is a
-  staging area for work meant to go upstream, not a variant, so merging
-  upstream is routine maintenance rather than an event.
+- **`main` (`0b1e3ae`) is level with `upstream/main`** (`58de946`, v1.8.1)
+  and 55 commits ahead. Session 11 did the v1.8.1 merge as PRs #34 (the merge,
+  #27), #35 (catalog fields → `tags`, #28), #36 (the volume field stays
+  linear, #29) and #37 (docs, #30), all merged 2026-11-18. None was checked in
+  a browser. Each PR body lists what was and was not tested. Keep the gap
+  small: the fork is a staging area for work meant to go upstream, not a
+  variant, so merging upstream is routine maintenance rather than an event.
+- **The Pages deploy builds on Node 20** (`.github/workflows/deploy.yml`),
+  while `package.json` asks for Node >= 24.16. It still builds. Bumping it is
+  unfiled.
 - **Things the merge settled that a later session would trip on.** The new
   linear call sites, and why volumes are among them, are in `CLAUDE.md` under
   Value transforms. `CatalogPanelExtended.vue` is gone: the fork's default
@@ -28,13 +26,12 @@ own document under `claude/` is a pointer, not a retelling.
     components and is never log10'd, so it is shown linear, with linear
     units, even when log10 is selected. #34 explains this, and no issue
     exists for it.
-- **After #34 the fork's delta is 31 files under `src/` and `tests/`** (11
-  fork-only, 20 edits to upstream files). Before it was 36 (14 and 22). #35
-  removes the fork's edits to `CatalogPanel.vue` and `catalog.ts` entirely.
+- **The fork's delta is about 31 files under `src/` and `tests/`** (11
+  fork-only, 20 edits to upstream files, counted after #34; was 36). The fork
+  no longer touches `CatalogPanel.vue` or `catalog.ts`.
   That number is the thing to keep small.
 - **Open issues:** #1, #13 (shelved), #14, #15, #16, #17, #20, #21, #25
-  (deck-gl, never triaged), #27–#30 (until their PRs merge). **Open PRs:**
-  #33 (this handoff) and #34–#37.
+  (deck-gl, never triaged). #27–#30 are closed.
 - An empty `fix/all-nan-notice` branch was created for #17 in session 7 and
   never used; it was deleted in session 8. **No work has started on #17.**
 
@@ -209,8 +206,7 @@ gone; the PR body describes it well enough to rebuild.
 
 ## How to resume
 
-**In flight:** PRs #34–#37, the upstream merge, waiting on Eli's review and
-go-ahead to merge. #34 goes first. The shortlist after that, most-ready first:
+Nothing is in flight. The shortlist, most-ready first:
 
 1. **#17, then #20 and #21** — the "say what happened instead of drawing a
    blank" trio from the catalog audit. #17 establishes the notice mechanism the

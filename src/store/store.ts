@@ -1,17 +1,25 @@
 import { defineStore } from "pinia";
 
 import {
+  createDefaultRgbSettings,
+  type TRgbBounds,
+  type TRgbSettings,
+} from "@/lib/data/rgbComposite.ts";
+import {
   VALUE_TRANSFORMS,
   type TValueTransform,
 } from "@/lib/data/valueTransform.ts";
-import type {
-  TVectorVariablePair,
-  TVectorVariableSelection,
+import {
+  levelAxesAreIdentical,
+  type TStreamlineLevelInfo,
+  type TVectorVariablePair,
+  type TVectorVariableSelection,
 } from "@/lib/data/vectorField.ts";
+import type { TVectorMagnitudeInfo } from "@/lib/data/vectorMagnitude.ts";
 import {
   LAND_SEA_MASK_MODES,
   type TLandSeaMaskMode,
-} from "@/lib/layers/landSeaMask.ts";
+} from "@/lib/layers/equirectLayer.ts";
 import type { TDistanceScale } from "@/lib/projection/distanceScale.ts";
 import {
   PROJECTION_TYPES,
@@ -20,6 +28,12 @@ import {
 } from "@/lib/projection/projectionUtils.ts";
 import type { TColorMap } from "@/lib/shaders/colormapShaders.ts";
 import type { TVarInfo, TBounds } from "@/lib/types/GlobeTypes.ts";
+import {
+  DEFAULT_BASEMAP,
+  DEFAULT_BASEMAP_OPTIONS,
+  type TBasemapEntry,
+  type TBasemapOptions,
+} from "@/utils/basemap.ts";
 import type { TCatalog } from "@/utils/catalog.ts";
 import type { THistogramSummary } from "@/utils/histogram.ts";
 
@@ -44,9 +58,12 @@ export const LAYER_KINDS = {
   COASTLINES: "coastlines",
   GRATICULES: "graticules",
   GRID: "grid",
-  MASK: "mask",
   STREAMLINES: "streamlines",
+  VOLUME: "volume",
+  RGB: "rgb",
   TEXTURE: "texture",
+  // "Maps and Masks"; it replaced the land/sea mask, hence its URL name.
+  BASEMAP: "mask",
 } as const;
 
 export type TLayerKind = (typeof LAYER_KINDS)[keyof typeof LAYER_KINDS];
@@ -71,8 +88,10 @@ export const BUILTIN_LAYER_IDS = {
   COASTLINES: "coastlines",
   GRATICULES: "graticules",
   GRID: "grid",
-  MASK: "mask",
   STREAMLINES: "streamlines",
+  VOLUME: "volume",
+  RGB: "rgb",
+  BASEMAP: "basemap",
 } as const;
 
 export const LAYER_OPACITY = {
@@ -80,6 +99,15 @@ export const LAYER_OPACITY = {
   MAX: 1,
   STEP: 0.05,
 } as const;
+
+export const STREAMLINE_LOADING_STAGES = {
+  DATA: "Loading vector data",
+  FIELD: "Preparing vector field",
+  PATHS: "Computing streamlines",
+} as const;
+
+type TStreamlineLoadingStage =
+  (typeof STREAMLINE_LOADING_STAGES)[keyof typeof STREAMLINE_LOADING_STAGES];
 
 export type TLayerEntry = {
   id: string;
@@ -89,6 +117,12 @@ export type TLayerEntry = {
   opacity: number;
   // land/sea cutout applied to texture layers
   maskMode: TLandSeaMaskMode;
+};
+
+export type TVolumeSelection = {
+  variable: string;
+  color: string;
+  opacity: number;
 };
 
 function normalizeLayerOpacity(opacity: number) {
@@ -108,8 +142,10 @@ export const BUILTIN_LAYER_NAMES = {
   [LAYER_KINDS.COASTLINES]: "Coastlines",
   [LAYER_KINDS.GRATICULES]: "Lat/Lon grid",
   [LAYER_KINDS.GRID]: "Data grid",
-  [LAYER_KINDS.MASK]: "Land/sea mask",
   [LAYER_KINDS.STREAMLINES]: "Flow streamlines",
+  [LAYER_KINDS.VOLUME]: "Volume",
+  [LAYER_KINDS.RGB]: "RGB composite",
+  [LAYER_KINDS.BASEMAP]: "Maps and Masks",
 } as const satisfies Record<
   Exclude<TLayerKind, typeof LAYER_KINDS.TEXTURE>,
   string
@@ -138,16 +174,28 @@ const BUILTIN_LAYER_DEFAULTS: Record<TBuiltinLayerKind, TBuiltinLayerDefaults> =
       opacity: LAYER_OPACITY.MAX,
       maskMode: LAND_SEA_MASK_MODES.OFF,
     },
-    [LAYER_KINDS.MASK]: {
-      id: BUILTIN_LAYER_IDS.MASK,
-      kind: LAYER_KINDS.MASK,
-      opacity: LAYER_OPACITY.MAX,
-      maskMode: LAND_SEA_MASK_MODES.OFF,
-    },
     [LAYER_KINDS.STREAMLINES]: {
       id: BUILTIN_LAYER_IDS.STREAMLINES,
       kind: LAYER_KINDS.STREAMLINES,
       opacity: 0.55,
+      maskMode: LAND_SEA_MASK_MODES.OFF,
+    },
+    [LAYER_KINDS.VOLUME]: {
+      id: BUILTIN_LAYER_IDS.VOLUME,
+      kind: LAYER_KINDS.VOLUME,
+      opacity: LAYER_OPACITY.MAX,
+      maskMode: LAND_SEA_MASK_MODES.OFF,
+    },
+    [LAYER_KINDS.RGB]: {
+      id: BUILTIN_LAYER_IDS.RGB,
+      kind: LAYER_KINDS.RGB,
+      opacity: LAYER_OPACITY.MAX,
+      maskMode: LAND_SEA_MASK_MODES.OFF,
+    },
+    [LAYER_KINDS.BASEMAP]: {
+      id: BUILTIN_LAYER_IDS.BASEMAP,
+      kind: LAYER_KINDS.BASEMAP,
+      opacity: LAYER_OPACITY.MAX,
       maskMode: LAND_SEA_MASK_MODES.OFF,
     },
   };
@@ -157,7 +205,7 @@ const INITIAL_BUILTIN_LAYER_KINDS = [
   LAYER_KINDS.GRID,
 ] as const satisfies readonly TBuiltinLayerKind[];
 
-function createBuiltinLayer(kind: TBuiltinLayerKind): TLayerEntry {
+export function createBuiltinLayer(kind: TBuiltinLayerKind): TLayerEntry {
   return {
     ...BUILTIN_LAYER_DEFAULTS[kind],
     name: BUILTIN_LAYER_NAMES[kind],
@@ -179,9 +227,9 @@ export const useGlobeControlStore = defineStore("globeControl", {
       coastlineResolution:
         COASTLINE_RESOLUTIONS.FIFTY_M as TCoastlineResolution,
       graticuleSpacing: GRATICULE_SPACINGS.THIRTY_DEGREES as TGraticuleSpacing,
-      landSeaMaskChoice: LAND_SEA_MASK_MODES.OFF as TLandSeaMaskMode,
-      // when true, use the textured versions; when false, use the simple versions
-      landSeaMaskUseTexture: false,
+      basemaps: undefined as TBasemapEntry[] | undefined,
+      selectedBasemap: DEFAULT_BASEMAP as string,
+      basemapOptions: { ...DEFAULT_BASEMAP_OPTIONS } as TBasemapOptions,
       varnameSelector: "-", // the varname currently selected in the dropdown
       varnameDisplay: "-", // the varname currently shown on the globe (will be updated after loading)
       loading: false,
@@ -210,6 +258,7 @@ export const useGlobeControlStore = defineStore("globeControl", {
       hoverEnabled: false,
       hoveredGridPoint: undefined as THoveredGridPoint | undefined,
       distanceScale: null as TDistanceScale | null,
+      basemapCatalogUrl: undefined as string | undefined,
       catalogUrl: undefined as string | undefined,
       catalogData: undefined as TCatalog | undefined,
       // ── Live datasets ──────────────────────────────────────────────
@@ -225,18 +274,52 @@ export const useGlobeControlStore = defineStore("globeControl", {
       gridExportRequest: 0 as number,
       gridExportLoading: false,
       streamlineAvailable: false,
+      streamlineIncompatibility: undefined as string | undefined,
+      streamlineLoading: false,
+      streamlineProgress: undefined as number | undefined,
+      streamlineLoadingStage:
+        STREAMLINE_LOADING_STAGES.DATA as TStreamlineLoadingStage,
       streamlinePair: undefined as TVectorVariablePair | undefined,
       streamlineSelection: {
         automatic: true,
       } as TVectorVariableSelection,
+      streamlineLevelInfo: undefined as TStreamlineLevelInfo | undefined,
+      streamlineLevelIndex: 0,
       streamlineSelectionRevision: 0,
+      streamlineMagnitudeRequested: false,
+      streamlineMagnitudeDisplayed: false,
+      streamlineMagnitudeInfo: undefined as TVectorMagnitudeInfo | undefined,
+      streamlineMagnitudeDerivable: false,
+      streamlineScalarRevision: 0,
       // will get incremented each time a new dataset OR a new variable in the
       // same dataset is loaded; used to trigger reactivity in child components
       // that need to reload data when the variable changes
       // if the value is even, the change is a new dataset; if odd, it's a
       // variable change within the same dataset
       newDatasetSignifier: 0 as number,
+      volumeSelections: [] as TVolumeSelection[],
+      volumeLoading: false,
+      volumeProgress: undefined as number | undefined,
+      volumeAvailable: false,
+      rgbSettings: createDefaultRgbSettings() as TRgbSettings,
+      // set by the grids that can draw an RGB composite
+      rgbAvailable: false,
+      rgbLoading: false,
+      // range of the loaded channels, used while no range is set
+      rgbDataBounds: undefined as TRgbBounds | undefined,
     };
+  },
+  getters: {
+    // Tile providers require their attribution to be visible on the map.
+    basemapAttribution(state): string | undefined {
+      const visible = state.layerStack.some(
+        (layer) => layer.kind === LAYER_KINDS.BASEMAP && layer.visible
+      );
+      return visible
+        ? state.basemaps?.find((entry) => entry.id === state.selectedBasemap)
+            ?.attribution
+        : undefined;
+    },
   },
   actions: {
     signifyDatasetChange() {
@@ -246,6 +329,9 @@ export const useGlobeControlStore = defineStore("globeControl", {
         this.newDatasetSignifier += 1;
       }
       this.resetStreamlineSelection();
+      this.volumeSelections = [];
+      this.volumeLoading = false;
+      this.volumeProgress = undefined;
     },
     signifyVariableChange() {
       if (this.newDatasetSignifier % 2 === 0) {
@@ -304,8 +390,11 @@ export const useGlobeControlStore = defineStore("globeControl", {
       this.loading = true;
       this.hoveredGridPoint = undefined;
     },
-    stopLoading() {
+    stopLoading(updateDisplay = true) {
       this.loading = false;
+      if (!updateDisplay) {
+        return;
+      }
       this.varnameDisplay = this.varnameSelector;
       for (let i = 0; i < this.dimSlidersValues.length; i++) {
         this.dimSlidersDisplay[i] = this.dimSlidersValues[i];
@@ -350,6 +439,9 @@ export const useGlobeControlStore = defineStore("globeControl", {
     updateBounds(bounds: TBounds) {
       this.selection = bounds;
     },
+    updateBasemaps(basemaps: TBasemapEntry[]) {
+      this.basemaps = basemaps;
+    },
     updateHistogram(histogram: number[] | undefined) {
       this.histogram = histogram;
     },
@@ -384,6 +476,9 @@ export const useGlobeControlStore = defineStore("globeControl", {
         return;
       }
       this.layerStack.unshift(createBuiltinLayer(kind));
+      if (kind === LAYER_KINDS.BASEMAP) {
+        this.basemapOptions = { ...DEFAULT_BASEMAP_OPTIONS };
+      }
     },
     updateTextureLayer(
       id: string,
@@ -403,7 +498,22 @@ export const useGlobeControlStore = defineStore("globeControl", {
     toggleLayerVisibility(id: string) {
       const layer = this.layerStack.find((entry) => entry.id === id);
       if (layer) {
-        layer.visible = !layer.visible;
+        if (id === BUILTIN_LAYER_IDS.STREAMLINES) {
+          this.setStreamlineLayerEnabled(!layer.visible);
+        } else {
+          layer.visible = !layer.visible;
+        }
+      }
+    },
+    setBasemapLayerEnabled(enabled: boolean) {
+      if (enabled) {
+        this.restoreBuiltinLayer(LAYER_KINDS.BASEMAP);
+      }
+      const layer = this.layerStack.find(
+        (entry) => entry.id === BUILTIN_LAYER_IDS.BASEMAP
+      );
+      if (layer) {
+        layer.visible = enabled;
       }
     },
     isStreamlineLayerEnabled() {
@@ -422,7 +532,54 @@ export const useGlobeControlStore = defineStore("globeControl", {
       );
       if (layer) {
         layer.visible = enabled;
+        if (!enabled) {
+          this.setStreamlineMagnitudeDisplayed(false);
+        }
       }
+    },
+    isVolumeLayerEnabled() {
+      return Boolean(
+        this.layerStack.find((entry) => entry.id === BUILTIN_LAYER_IDS.VOLUME)
+          ?.visible
+      );
+    },
+    setVolumeLayerEnabled(enabled: boolean) {
+      if (enabled) {
+        this.restoreBuiltinLayer(LAYER_KINDS.VOLUME);
+      }
+      const layer = this.layerStack.find(
+        (entry) => entry.id === BUILTIN_LAYER_IDS.VOLUME
+      );
+      if (layer) {
+        layer.visible = enabled;
+      }
+    },
+    isRgbLayerEnabled() {
+      return Boolean(
+        this.layerStack.find((entry) => entry.id === BUILTIN_LAYER_IDS.RGB)
+          ?.visible
+      );
+    },
+    setRgbLayerEnabled(enabled: boolean) {
+      if (enabled) {
+        this.restoreBuiltinLayer(LAYER_KINDS.RGB);
+      }
+      const layer = this.layerStack.find(
+        (entry) => entry.id === BUILTIN_LAYER_IDS.RGB
+      );
+      if (layer) {
+        layer.visible = enabled;
+      }
+    },
+    updateRgbSettings(patch: Partial<TRgbSettings>) {
+      this.rgbSettings = { ...this.rgbSettings, ...patch };
+    },
+    setVolumeSelections(selections: TVolumeSelection[]) {
+      this.volumeSelections = selections.slice(0, 4).map((selection) => ({
+        variable: selection.variable,
+        color: selection.color,
+        opacity: normalizeLayerOpacity(selection.opacity),
+      }));
     },
     // moves the entry so it ends up at index `toIndex` of the resulting array
     moveLayer(id: string, toIndex: number) {
@@ -440,6 +597,7 @@ export const useGlobeControlStore = defineStore("globeControl", {
     setStreamlinePair(pair?: TVectorVariablePair) {
       this.streamlinePair = pair;
       this.streamlineAvailable = pair !== undefined;
+      this.streamlineIncompatibility = undefined;
     },
     setStreamlineSelection(selection: TVectorVariableSelection) {
       const previous = this.streamlineSelection;
@@ -451,9 +609,71 @@ export const useGlobeControlStore = defineStore("globeControl", {
         return;
       }
       this.streamlineSelection = selection;
+      this.streamlineIncompatibility = undefined;
+      this.streamlineLevelInfo = undefined;
+      this.streamlineLevelIndex = 0;
       this.streamlineSelectionRevision++;
     },
+    setStreamlineLevelInfo(info?: TStreamlineLevelInfo) {
+      const previous = this.streamlineLevelInfo;
+      const sameLevelAxis = Boolean(
+        previous && info && levelAxesAreIdentical(previous, info)
+      );
+      if (sameLevelAxis || (!previous && !info)) {
+        return;
+      }
+      this.streamlineLevelInfo = info;
+      this.streamlineLevelIndex = 0;
+    },
+    setStreamlineLevelIndex(index: number, refresh = true) {
+      const maximum = Math.max(
+        0,
+        (this.streamlineLevelInfo?.values.length ?? 1) - 1
+      );
+      const nextIndex = Math.min(maximum, Math.max(0, Math.trunc(index)));
+      if (this.streamlineLevelIndex === nextIndex) {
+        return;
+      }
+      this.streamlineLevelIndex = nextIndex;
+      if (refresh) {
+        this.streamlineSelectionRevision++;
+      }
+    },
+    setStreamlineMagnitudeDisplayed(displayed: boolean, refresh = false) {
+      this.streamlineMagnitudeRequested = displayed;
+      if (this.streamlineMagnitudeDisplayed === displayed) {
+        return;
+      }
+      this.streamlineMagnitudeDisplayed = displayed;
+      if (refresh) {
+        this.streamlineScalarRevision++;
+      }
+    },
+    setStreamlineMagnitudeInfo(info?: TVectorMagnitudeInfo, derivable = false) {
+      this.streamlineMagnitudeInfo = info
+        ? {
+            standardName: info.standardName,
+            longName: info.longName,
+            units: info.units,
+          }
+        : undefined;
+      this.streamlineMagnitudeDerivable = Boolean(info && derivable);
+      const shouldDisplay =
+        this.streamlineMagnitudeRequested && this.streamlineMagnitudeDerivable;
+      if (this.streamlineMagnitudeDisplayed === shouldDisplay) {
+        return;
+      }
+      this.streamlineMagnitudeDisplayed = shouldDisplay;
+      if (!shouldDisplay && this.varnameDisplay !== this.varnameSelector) {
+        this.streamlineScalarRevision++;
+      }
+    },
     resetStreamlineSelection() {
+      this.streamlinePair = undefined;
+      this.streamlineAvailable = false;
+      this.streamlineIncompatibility = undefined;
+      this.streamlineLevelInfo = undefined;
+      this.streamlineLevelIndex = 0;
       this.setStreamlineSelection({ automatic: true });
     },
     setHoveredGridPoint(point: THoveredGridPoint) {

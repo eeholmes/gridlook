@@ -144,11 +144,10 @@ describe("castDataVarToFloat32", () => {
     ["BigUint64Array", new BigUint64Array([1n, 2n])],
   ];
 
-  it.each(BIGINT_ARRAYS)("throws on %s", (_label, input) => {
-    // int64/uint64 data variables are rare but legal, and `Float32Array.from`
-    // refuses BigInt outright. The user sees "Cannot convert a BigInt value to
-    // a number", which says nothing about data types or the variable involved.
-    expect(() => castDataVarToFloat32(input as never)).toThrow(TypeError);
+  it.each(BIGINT_ARRAYS)("converts %s", (_label, input) => {
+    // Upstream added int64/uint64 support in f1ce362; before it,
+    // `Float32Array.from` refused BigInt with an opaque TypeError.
+    expect(Array.from(castDataVarToFloat32(input as never))).toEqual([1, 2]);
   });
 
   it("silently turns string data into NaN", () => {

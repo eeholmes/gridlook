@@ -8,8 +8,13 @@ import {
   isIcechunkStorePath,
   parseStorePath,
 } from "./icechunkStore.ts";
+import { isRemoteNetCDFSource } from "./localNetCDF.ts";
 import { getLocalZarrStore, isLocalZarrSource } from "./localZarr.ts";
 import type { NetCDFArray, NetCDFGroup, TNetCDFBackend } from "./netCDF.ts";
+import {
+  createReferenceStore,
+  isReferenceStorePath,
+} from "./referenceStore.ts";
 
 import {
   ZARR_FORMAT,
@@ -24,6 +29,12 @@ type TNetCDFNode = {
   readonly format: typeof ZARR_FORMAT.NETCDF;
 };
 
+export type TRequestSettings = {
+  headers: Record<string, string>;
+  // Sends cookies cross-origin too; same-origin requests always send them.
+  withCredentials: boolean;
+};
+
 export class ZarrDataManager {
   private static pendingStore: Promise<
     zarr.Location<zarr.AsyncReadable>
@@ -31,6 +42,20 @@ export class ZarrDataManager {
   private static fetchStorePath: string | null = null;
 
   private static netCDFBackend: TNetCDFBackend | null = null;
+
+  // Kept in memory only, so they never end up in a shared URL.
+  private static requestSettings: TRequestSettings = {
+    headers: {},
+    withCredentials: false,
+  };
+
+  static setRequestSettings(settings: TRequestSettings) {
+    this.requestSettings = settings;
+  }
+
+  static getRequestSettings() {
+    return this.requestSettings;
+  }
 
   private static isNetCDFNode(value: unknown): value is TNetCDFNode {
     return (
@@ -79,14 +104,29 @@ export class ZarrDataManager {
 
     const parsed = parseStorePath(storePath);
     let store: zarr.AsyncReadable | undefined = undefined;
-    if (
+    if (isReferenceStorePath(storePath)) {
+      store = await createReferenceStore(storePath);
+    } else if (
       isIcechunk ||
       parsed.backend === "icechunk" ||
       isIcechunkStorePath(storePath)
     ) {
       store = await createIcechunkStore(storePath);
     } else {
-      store = new zarr.FetchStore(parsed.url, { useSuffixRequest: true });
+      store = new zarr.FetchStore(parsed.url, {
+        useSuffixRequest: true,
+        // Read at request time, so changed settings apply to cached stores too.
+        fetch: (request) => {
+          const { headers, withCredentials } = this.requestSettings;
+          for (const [name, value] of Object.entries(headers)) {
+            request.headers.set(name, value);
+          }
+          return fetch(
+            request,
+            withCredentials ? { credentials: "include" } : undefined
+          );
+        },
+      });
     }
 
     const cache = new QuickLRU<string, Uint8Array | undefined>({
@@ -104,6 +144,13 @@ export class ZarrDataManager {
     datasource: TDatasetSource,
     format?: TZarrFormat
   ): Promise<zarr.Group<zarr.AsyncReadable> | NetCDFGroup> {
+    if (isRemoteNetCDFSource(datasource.store)) {
+      return await this.getNetCDFBackend().openGroup(
+        datasource.store,
+        datasource.store,
+        datasource.dataset
+      );
+    }
     if (datasource.file || format === ZARR_FORMAT.NETCDF) {
       if (!datasource.file) {
         throw new Error("The local NetCDF file is no longer available.");
@@ -244,7 +291,8 @@ export class ZarrDataManager {
 
   static getVariableDataFromArray(
     array: zarr.Array<zarr.DataType, zarr.AsyncReadable>,
-    selection?: (number | null | zarr.Slice)[]
+    selection?: (number | null | zarr.Slice)[],
+    options?: zarr.GetOptions
   ) {
     if (this.isNetCDFNode(array)) {
       return this.getNetCDFBackend().getArray(
@@ -253,9 +301,9 @@ export class ZarrDataManager {
       );
     }
     if (selection && selection.length > 0) {
-      return zarr.get(array, selection);
+      return zarr.get(array, selection, options);
     }
-    return zarr.get(array);
+    return zarr.get(array, null, options);
   }
 
   static async getCRSInfo(
@@ -278,17 +326,25 @@ export class ZarrDataManager {
       varname,
       datasources.zarr_format
     );
-    if (datavar.attrs?.grid_mapping) {
-      return String(datavar.attrs.grid_mapping).split(":")[0];
-    }
-    const group = await ZarrDataManager.getDatasetGroup(source);
-    if (group.attrs?.grid_mapping) {
-      return String(group.attrs.grid_mapping).split(":")[0];
+    const group = datavar.attrs?.grid_mapping
+      ? undefined
+      : await ZarrDataManager.getDatasetGroup(source);
+    return this.getCRSVariableName(datavar.attrs, group?.attrs);
+  }
+
+  static getCRSVariableName(
+    variableAttrs: zarr.Attributes,
+    groupAttrs: zarr.Attributes = {}
+  ) {
+    // The variable's CF mapping takes precedence; group metadata is a fallback.
+    const mapping = variableAttrs.grid_mapping ?? groupAttrs.grid_mapping;
+    if (mapping) {
+      return String(mapping).split(":")[0].trim();
     }
     if (
-      (datavar.attrs?.coordinates as string | undefined)?.includes(
-        "spatial_ref"
-      )
+      (variableAttrs.coordinates as string | undefined)
+        ?.split(/\s+/)
+        .includes("spatial_ref")
     ) {
       return "spatial_ref";
     }

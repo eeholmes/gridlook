@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { storeToRefs } from "pinia";
+import proj4, { type Converter as TProjectionConverter } from "proj4";
 import * as THREE from "three";
 import { onBeforeMount, onBeforeUnmount, ref } from "vue";
 import type * as zarr from "zarrita";
@@ -9,21 +10,35 @@ import type {
   TGeoSample,
   TGeoSampleIndex,
 } from "./composables/gridHoverUtils.ts";
-import { loadVectorComponents } from "./composables/streamlineData.ts";
 import { useGridDataLoader } from "./composables/useGridDataLoader.ts";
+import {
+  getRgbChannelReads,
+  useRgbLayer,
+  type TRgbRequest,
+} from "./composables/useRgbLayer.ts";
+import { useScalarFieldCache } from "./composables/useScalarFieldCache.ts";
 import { useSharedGridLogic } from "./composables/useSharedGridLogic.ts";
 import { useStreamlineLayer } from "./composables/useStreamlineLayer.ts";
+import { useVolume } from "./composables/useVolume.ts";
 
 import {
+  DEFAULT_ANCHOR_CRS,
   getCRSWkt,
+  hasLengthUnitCoordinates,
+  hasRotatedLatLonMismatch,
+  hasTrailingProjectedXYDimensions,
   isLatitudeName,
   isLongitudeName,
-  isProjectedXName,
-  isProjectedYName,
+  isWebMercatorCRS,
+  loadGridAxes,
   projectedAxisCoordinatesToLonLat,
+  projectXYGridToLonLat,
 } from "@/lib/data/coordinateVariables.ts";
 import { downsampleDataTexture } from "@/lib/data/dataTexture.ts";
 import { buildDimensionRangesAndIndices } from "@/lib/data/dimensionHandling.ts";
+import { interleaveRgba, mergeRgbBounds } from "@/lib/data/rgbComposite.ts";
+import { loadVectorComponents } from "@/lib/data/streamlineData.ts";
+import { VALUE_TRANSFORMS } from "@/lib/data/valueTransform.ts";
 import {
   castDataVarToFloat32,
   decodeVariableDataAndGetBounds,
@@ -33,6 +48,10 @@ import {
   RegularVectorField,
   resolveVectorVariablePair,
 } from "@/lib/data/vectorField.ts";
+import {
+  createVectorMagnitudeData,
+  type TVectorMagnitudeData,
+} from "@/lib/data/vectorMagnitude.ts";
 import { ZarrDataManager } from "@/lib/data/ZarrDataManager.ts";
 import {
   getGridVariableData,
@@ -41,9 +60,11 @@ import {
 import {
   GridTextureExportUserDataKey,
   getRegularLatLonGridBounds,
+  isUniformlySpaced,
   TextureExportVCoordinate,
 } from "@/lib/layers/gridExportMetadata.ts";
 import {
+  createTriangleWrapProjectionGeometry,
   createWrappedProjectionMesh,
   setupProjectionGeometryWrap,
   updateProjectionMeshes,
@@ -55,9 +76,14 @@ import {
   updateProjectionUniforms,
 } from "@/lib/shaders/gridShaders.ts";
 import type { TSources } from "@/lib/types/GlobeTypes.ts";
+import {
+  VOLUME_GRID_TYPES,
+  type TProjectedVolumeGrid,
+} from "@/lib/volume/volumeGrid.ts";
 import { useUrlParameterStore } from "@/store/paramStore.ts";
 import { useGlobeControlStore } from "@/store/store.ts";
 import { useLog } from "@/ui/common/useLog.ts";
+import { ToastType, useToast } from "@/ui/common/useToast.ts";
 
 const props = defineProps<{
   datasources?: TSources;
@@ -66,6 +92,7 @@ const props = defineProps<{
 
 const store = useGlobeControlStore();
 const { logError } = useLog();
+const { addToast } = useToast();
 const { dimSlidersValues, colormap, varnameSelector, invertColormap, varinfo } =
   storeToRefs(store);
 
@@ -83,7 +110,6 @@ const {
   fitCameraToDataset,
   getDataVar,
   fetchDimensionDetails,
-  updateLandSeaMask,
   updateColormap,
   updateHistogram,
   projectionHelper,
@@ -103,9 +129,15 @@ const { setHoverLookupFromIndex, clearHoverLookup } =
 const longitudes = ref<Float32Array>(new Float32Array());
 const latitudes = ref<Float32Array>(new Float32Array());
 const isProjectedGrid = ref(false);
+let projectedGrid: TProjectedVolumeGrid | undefined;
+// Converts native axis coordinates (rotated pole or projected x/y) to lon/lat
+let nativeProjection: TProjectionConverter | undefined;
 const selectedDimensionNames = ref<string[]>([]);
 let lastStreamlineIndices: (number | null | zarr.Slice)[] | undefined;
+let lastDatavar: zarr.Array<zarr.DataType, zarr.AsyncReadable> | undefined;
 let streamlineRequestRevision = 0;
+let cachedMagnitude: TVectorMagnitudeData | undefined;
+let cachedStreamlineKey: string | undefined;
 
 const BATCH_SIZE = 60;
 const MAX_GEO_RESOLUTION = 512;
@@ -117,12 +149,39 @@ onColormapChange(() => updateColormap(meshes));
 onProjectionChange(updateMeshProjectionUniforms);
 onMotionStateChange(updateMeshProjectionUniforms);
 
+const scalarCache = useScalarFieldCache({
+  updateHistogram,
+  updateColormap: () => updateColormap(meshes),
+  redraw,
+});
+
 const streamlines = useStreamlineLayer({
   getScene,
   redraw,
   projectionHelper,
   onProjectionChange,
   registerAnimationCallback,
+});
+
+const rgbLayer = useRgbLayer({
+  getScene,
+  redraw,
+  projectionHelper,
+  isSceneInMotion,
+  onProjectionChange,
+  onMotionStateChange,
+  load: loadRgbComposite,
+});
+
+const volume = useVolume({
+  getDatasources: () => props.datasources,
+  getScene,
+  getRenderer,
+  redraw,
+  projectionHelper,
+  isSceneInMotion,
+  onProjectionChange,
+  onMotionStateChange,
 });
 
 function updateMeshProjectionUniforms() {
@@ -137,20 +196,23 @@ const { datasourceUpdate } = useGridDataLoader({
   getDatasources: () => props.datasources,
   getDataVar,
   fetchAndRenderData,
+  scalarCache,
   clearHoverLookup,
   prepareDatasource: async () => {
     await getDims();
+    void warnIfRotatedLatLonMismatch();
     await makeGeometry();
   },
-  updateLandSeaMask,
   updateColormap: () => updateColormap(meshes),
   refreshStreamlines: async (reuseCached) => {
-    if (reuseCached && streamlines.showCached()) {
-      return;
-    }
     if (lastStreamlineIndices) {
-      await updateStreamlines(lastStreamlineIndices);
+      await updateStreamlines(lastStreamlineIndices, reuseCached);
     }
+  },
+  suspendStreamlines: () => {
+    streamlineRequestRevision++;
+    store.streamlineLoading = false;
+    store.streamlineProgress = undefined;
   },
 });
 
@@ -166,23 +228,50 @@ function getDimensionData(
   );
 }
 
-async function fetchProjectedXYDims(
-  grid: TSources["levels"][0]["grid"],
-  xDim: string,
-  yDim: string
-) {
-  const [xData, yData] = await Promise.all([
-    getDimensionData(grid, xDim),
-    getDimensionData(grid, yDim),
-  ]);
-  const crsWkt = await getCRSWkt(props.datasources!, varnameSelector.value);
-  const converted = projectedAxisCoordinatesToLonLat(
-    xData.data as Float32Array,
-    yData.data as Float32Array,
-    crsWkt
-  );
-  longitudes.value = Float32Array.from(converted.longitudes);
-  latitudes.value = Float32Array.from(converted.latitudes);
+// Not awaited: the check reads the 2-D lat/lon and must not delay rendering.
+async function warnIfRotatedLatLonMismatch() {
+  const grid = projectedGrid;
+  if (
+    !props.isRotated ||
+    !grid ||
+    !(await hasRotatedLatLonMismatch(
+      props.datasources!,
+      varnameSelector.value,
+      grid.x,
+      grid.y,
+      grid.crs
+    ))
+  ) {
+    return;
+  }
+  addToast("Rotated pole and lat/lon disagree", {
+    detail:
+      "The dataset's rotated pole places the grid somewhere else than its own lat/lon coordinates. This grid follows the rotated pole; the irregular grids follow lat/lon.",
+    duration: 10000,
+    type: ToastType.WARNING,
+  });
+}
+
+// Projected x/y in metres without a CRS (e.g. idealized LES) have no location
+// on Earth. x/y in other units keep being drawn as degrees.
+async function getDefaultAnchorCRS(dimensions: string[]) {
+  if (
+    !isProjectedGrid.value ||
+    !(await hasLengthUnitCoordinates(
+      props.datasources!,
+      varnameSelector.value,
+      dimensions.slice(-2)
+    ))
+  ) {
+    return null;
+  }
+  addToast("Dataset is not georeferenced", {
+    detail:
+      "Its x/y grid has no map projection, so it is drawn true to scale starting at 0°N 0°E. Its position on the globe has no meaning.",
+    duration: 8000,
+    type: ToastType.WARNING,
+  });
+  return DEFAULT_ANCHOR_CRS;
 }
 
 async function getDims() {
@@ -195,8 +284,11 @@ async function getDims() {
   const lastDim = dimensions[dimensions.length - 1];
   const secondLastDim = dimensions[dimensions.length - 2];
 
-  const isProjectedXY =
-    isProjectedXName(lastDim) && isProjectedYName(secondLastDim);
+  const isProjectedXY = await hasTrailingProjectedXYDimensions(
+    props.datasources!,
+    varnameSelector.value,
+    dimensions
+  );
   isProjectedGrid.value = isProjectedXY;
 
   const latOnlyCheck =
@@ -205,60 +297,41 @@ async function getDims() {
     !isLongitudeName(secondLastDim);
   isLatOnly.value = latOnlyCheck;
 
+  projectedGrid = undefined;
+  nativeProjection = undefined;
   const grid = props.datasources!.levels[0].grid;
-  if (isProjectedXY) {
-    await fetchProjectedXYDims(grid, lastDim, secondLastDim);
-  } else if (latOnlyCheck) {
+  if (latOnlyCheck) {
     const latitudesData = await getDimensionData(grid, lastDim);
     latitudes.value = latitudesData.data as Float32Array;
     longitudes.value = Float32Array.from({ length: 360 }, (_, i) => i - 179.5);
   } else {
-    const latName = secondLastDim;
-    const lonName = lastDim;
-    const [latitudesData, longitudesData] = await Promise.all([
-      getDimensionData(grid, latName),
-      getDimensionData(grid, lonName),
+    const [{ x, y }, crsWkt] = await Promise.all([
+      loadGridAxes(props.datasources!, varnameSelector.value, dimensions),
+      isProjectedXY || props.isRotated
+        ? getCRSWkt(props.datasources!, varnameSelector.value)
+        : null,
     ]);
-    const myLongitudes = longitudesData.data as Float32Array;
-    const myLatitudes = latitudesData.data as Float32Array;
-    longitudes.value = new Float32Array(new Set(myLongitudes));
-    latitudes.value = new Float32Array(new Set(myLatitudes));
+    const crs = crsWkt ?? (await getDefaultAnchorCRS(dimensions));
+    if (props.isRotated && !crs) {
+      throw new Error("Rotated grids need valid pole coordinates.");
+    }
+    if (crs) {
+      projectedGrid = { kind: VOLUME_GRID_TYPES.PROJECTED, x, y, crs };
+      if (props.isRotated || (isProjectedXY && !isWebMercatorCRS(crs))) {
+        nativeProjection = proj4(crs, "EPSG:4326");
+      }
+    }
+    const coordinates = isProjectedXY
+      ? projectedAxisCoordinatesToLonLat(x, y, crs)
+      : { longitudes: x, latitudes: y };
+    longitudes.value = new Float32Array(new Set(coordinates.longitudes));
+    latitudes.value = new Float32Array(new Set(coordinates.latitudes));
   }
 }
 
-function rotatedToGeographic(
-  latR: number,
-  lonR: number,
-  poleLat: number,
-  poleLon: number
-) {
-  const latRRad = THREE.MathUtils.degToRad(latR);
-  const lonRRad = THREE.MathUtils.degToRad(lonR);
-  const poleLatRad = THREE.MathUtils.degToRad(poleLat);
-  const poleLonRad = THREE.MathUtils.degToRad(poleLon);
-
-  const sinPhi =
-    Math.sin(poleLatRad) * Math.sin(latRRad) +
-    Math.cos(poleLatRad) * Math.cos(latRRad) * Math.cos(lonRRad);
-  const phi = Math.asin(sinPhi);
-
-  const y = -Math.cos(latRRad) * Math.sin(lonRRad);
-  const x =
-    Math.sin(latRRad) * Math.cos(poleLatRad) -
-    Math.cos(latRRad) * Math.sin(poleLatRad) * Math.cos(lonRRad);
-  const lambda = poleLonRad + Math.atan2(y, x);
-
-  // Normalize longitude to [-180, 180)
-  let lon = THREE.MathUtils.radToDeg(lambda);
-  if (lon > 180) {
-    lon -= 360;
-  }
-  if (lon < -180) {
-    lon += 360;
-  }
-
-  const lat = THREE.MathUtils.radToDeg(phi);
-  return { lat, lon };
+// x/y axes in projection units (e.g. metres): must not be wrapped like degrees
+function hasProjectedNativeAxes() {
+  return isProjectedGrid.value && nativeProjection !== undefined;
 }
 
 function isLongitudeGlobal(longitudes: Float32Array): boolean {
@@ -287,9 +360,7 @@ function generateBatchVerticesAndUVs(
   latStart: number,
   latEnd: number,
   isLatReversed: boolean,
-  isRotated: boolean,
-  poleLat?: number,
-  poleLon?: number
+  transform: TProjectionConverter | undefined
 ) {
   const batchLatCount = latEnd - latStart + 1;
   const lonCount = longitudes.length;
@@ -309,9 +380,9 @@ function generateBatchVerticesAndUVs(
     for (let lj = 0; lj < lonCount; lj++) {
       const rawLon = longitudes[lj];
 
-      const { lat, lon } = isRotated
-        ? rotatedToGeographic(rawLat, rawLon, poleLat!, poleLon!)
-        : { lat: rawLat, lon: rawLon };
+      const [lon, lat] = transform
+        ? transform.forward([rawLon, rawLat])
+        : [rawLon, rawLat];
 
       const vertexIdx = li * lonCount + lj;
       helper.projectLatLonToArrays(
@@ -388,7 +459,12 @@ function subsampleCoords(
 }
 
 function getRegularTextureExportMetadata(isRotated: boolean | undefined) {
-  if (isRotated || isProjectedGrid.value) {
+  if (
+    isRotated ||
+    isProjectedGrid.value ||
+    !isUniformlySpaced(latitudes.value) ||
+    !isUniformlySpaced(longitudes.value)
+  ) {
     return undefined;
   }
 
@@ -406,20 +482,12 @@ function getRegularTextureExportMetadata(isRotated: boolean | undefined) {
   };
 }
 
-async function getRegularGridPole(isRotated: boolean | undefined) {
-  if (!isRotated) {
-    return {};
-  }
-  const rotatedNorthPole = await getRotatedNorthPole();
-  return {
-    poleLat: rotatedNorthPole.lat,
-    poleLon: rotatedNorthPole.lon,
-  };
-}
-
-async function getRegularGridParameters() {
+function getRegularGridParameters() {
   const isRotated = props.isRotated;
-  let longitudeValues = normalizeLongitudes(longitudes.value);
+  const hasProjectedAxes = hasProjectedNativeAxes();
+  let longitudeValues = hasProjectedAxes
+    ? longitudes.value
+    : normalizeLongitudes(longitudes.value);
   let latitudeValues = latitudes.value;
 
   // Check if latitudes are descending and reverse if necessary
@@ -429,7 +497,7 @@ async function getRegularGridParameters() {
     latitudeValues = Float32Array.from(latitudeValues).reverse();
   }
 
-  const isGlobal = isLongitudeGlobal(longitudes.value);
+  const isGlobal = !hasProjectedAxes && isLongitudeGlobal(longitudes.value);
   const textureLonCount = longitudeValues.length;
   const originalLatCount = latitudeValues.length;
   const textureExportMetadata = getRegularTextureExportMetadata(isRotated);
@@ -453,8 +521,6 @@ async function getRegularGridParameters() {
     lonOrigIndices[lonOrigIndicesBase.length] = textureLonCount;
   }
 
-  const { poleLat, poleLon } = await getRegularGridPole(isRotated);
-
   return {
     geoLatitudes,
     geoLongitudes,
@@ -463,9 +529,7 @@ async function getRegularGridParameters() {
     originalLatCount,
     textureLonCount,
     isLatReversed,
-    isRotated,
-    poleLat,
-    poleLon,
+    transform: nativeProjection,
     geoLatCount: geoLatitudes.length,
     geoLonCount: geoLongitudes.length,
     textureExportMetadata,
@@ -537,9 +601,7 @@ function createBatchGeometry(
     latStart,
     latEnd,
     gridParams.isLatReversed,
-    gridParams.isRotated,
-    gridParams.poleLat,
-    gridParams.poleLon
+    gridParams.transform
   );
 
   geometry.setAttribute(
@@ -554,11 +616,12 @@ function createBatchGeometry(
 
   const indices = generateGridIndices(batchLatCount, gridParams.geoLonCount);
   geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  const wrappedGeometry = createTriangleWrapProjectionGeometry(geometry);
   if (gridParams.textureExportMetadata) {
-    geometry.userData[GridTextureExportUserDataKey.METADATA] =
+    wrappedGeometry.userData[GridTextureExportUserDataKey.METADATA] =
       gridParams.textureExportMetadata;
   }
-  return geometry;
+  return wrappedGeometry;
 }
 
 function applyBatchGeometry(
@@ -569,12 +632,14 @@ function applyBatchGeometry(
     setupProjectionGeometryWrap(geometry);
     meshes[batchIndex].geometry.dispose();
     meshes[batchIndex].geometry = geometry;
+    rgbLayer.updateGeometry(batchIndex, geometry);
   } else {
     const mesh = createWrappedProjectionMesh(
       geometry,
       new THREE.ShaderMaterial(),
       projectionHelper.value.type
     );
+    mesh.visible = false;
     mesh.frustumCulled = false;
     meshes.push(mesh);
     getScene()?.add(mesh);
@@ -583,7 +648,7 @@ function applyBatchGeometry(
 
 async function makeGeometry() {
   try {
-    const gridParams = await getRegularGridParameters();
+    const gridParams = getRegularGridParameters();
     const totalBatches = Math.ceil((gridParams.geoLatCount - 1) / BATCH_SIZE);
     cleanupMeshes(totalBatches);
 
@@ -669,20 +734,61 @@ function createRegularTexture(rawData: Float32Array, wrapRepeat: boolean) {
   return texture;
 }
 
-async function getRotatedNorthPole(): Promise<{ lat: number; lon: number }> {
-  const crs = await ZarrDataManager.getCRSInfo(
-    props.datasources!,
-    varnameSelector.value
+// All batch meshes share one RGBA image of the whole grid, like the scalar
+// texture.
+async function loadRgbComposite(request: TRgbRequest) {
+  const datavar = lastDatavar;
+  if (!datavar || isLatOnly.value) {
+    return { batches: [] };
+  }
+  const reads = await getRgbChannelReads(request, datavar, openRgbVariable);
+  const channels = await Promise.all(
+    reads.map(async (read) => {
+      const data = castDataVarToFloat32(
+        await fetchRegularGridVariableData(read.selection, read.variable)
+      );
+      const bounds = decodeVariableDataAndGetBounds(
+        read.datavar,
+        data,
+        undefined,
+        undefined,
+        VALUE_TRANSFORMS.LINEAR
+      );
+      return {
+        ...fitDataToMaxTextureSize(
+          data,
+          longitudes.value.length,
+          latitudes.value.length
+        ),
+        bounds,
+      };
+    })
   );
-  const lat = crs.attrs["grid_north_pole_latitude"] as number;
-  const lon = crs.attrs["grid_north_pole_longitude"] as number;
-  return { lat, lon };
+  if (!request.isCurrent()) {
+    return undefined;
+  }
+  const [red, green, blue] = channels;
+  const image = {
+    data: interleaveRgba(red.data, green.data, blue.data),
+    width: red.texWidth,
+    height: red.texHeight,
+    wrapRepeat:
+      !hasProjectedNativeAxes() && isLongitudeGlobal(longitudes.value),
+  };
+  return {
+    batches: meshes.map((mesh, batchIndex) => ({
+      batchIndex,
+      geometry: mesh.geometry,
+      image,
+    })),
+    bounds: mergeRgbBounds(channels.map((channel) => channel.bounds)),
+  };
 }
 
 function makeMaterial(rawData: Float32Array) {
   const texture = createRegularTexture(
     rawData,
-    isLongitudeGlobal(longitudes.value)
+    !hasProjectedNativeAxes() && isLongitudeGlobal(longitudes.value)
   );
   const low = store.selection?.low as number;
   const high = store.selection?.high as number;
@@ -692,21 +798,18 @@ function makeMaterial(rawData: Float32Array) {
     invertColormap.value
   );
 
-  return makeGpuProjectedTextureMaterial(
+  const material = makeGpuProjectedTextureMaterial(
     texture,
     colormap.value,
     addOffset,
     scaleFactor
   );
+  material.uniforms.useTriangleWrapCull.value = 1;
+  return material;
 }
 
-async function buildHoverSamples(
-  rawData: Float32Array
-): Promise<TGeoSampleIndex> {
-  let rotPole: { lat: number; lon: number } | null = null;
-  if (props.isRotated) {
-    rotPole = await getRotatedNorthPole();
-  }
+function buildHoverSamples(rawData: Float32Array): TGeoSampleIndex {
+  const transform = nativeProjection;
 
   const lats = latitudes.value;
   const lons = longitudes.value;
@@ -722,21 +825,26 @@ async function buildHoverSamples(
         return null;
       }
 
+      const [nativeLon, nativeLat] = transform
+        ? transform.inverse([queryLon, queryLat])
+        : [queryLon, queryLat];
       // Find nearest latitude index via binary search
-      const latIdx = nearestIndex(lats, queryLat);
+      const latIdx = nearestIndex(lats, nativeLat);
 
       if (isLatOnly.value) {
         return { lat: lats[latIdx], lon: 0, value: rawData[latIdx] };
       }
 
       // Find nearest longitude index (accounting for wrapping)
-      const lonIdx = nearestLonIndex(lons, queryLon);
+      const lonIdx = hasProjectedNativeAxes()
+        ? nearestIndex(lons, nativeLon)
+        : nearestLonIndex(lons, nativeLon);
 
       const rawLat = lats[latIdx];
       const rawLon = lons[lonIdx];
-      const { lat, lon } = rotPole
-        ? rotatedToGeographic(rawLat, rawLon, rotPole.lat, rotPole.lon)
-        : { lat: rawLat, lon: rawLon };
+      const [lon, lat] = transform
+        ? transform.forward([rawLon, rawLat])
+        : [rawLon, rawLat];
 
       return {
         lat,
@@ -825,15 +933,24 @@ async function buildDimensionConfig(
   );
 }
 
+function openRgbVariable(variable: string) {
+  return ZarrDataManager.getVariableInfo(
+    ZarrDataManager.getDatasetSource(props.datasources!, varnameSelector.value),
+    variable,
+    props.datasources!.zarr_format
+  );
+}
+
 function fetchRegularGridVariableData(
-  selection: (number | null | zarr.Slice)[]
+  selection: (number | null | zarr.Slice)[],
+  variable = varnameSelector.value
 ) {
   return getGridVariableData({
     source: ZarrDataManager.getDatasetSource(
       props.datasources!,
       varnameSelector.value
     ),
-    variable: varnameSelector.value,
+    variable,
     format: props.datasources!.zarr_format,
     selection,
   });
@@ -862,8 +979,22 @@ function updateMeshMaterials(rawData: Float32Array) {
   updateColormap(meshes);
 }
 
-async function makeVectorField(uData: Float32Array, vData: Float32Array) {
-  if (!props.isRotated) {
+async function showMagnitude(scalar: TVectorMagnitudeData) {
+  await scalarCache.showMagnitude(scalar, async () => {
+    const hoverIndex = buildHoverSamples(scalar.data);
+    return () => {
+      updateMeshMaterials(scalar.data);
+      setHoverLookupFromIndex(hoverIndex, NaN, NaN);
+    };
+  });
+}
+
+async function makeVectorField(
+  uData: Float32Array,
+  vData: Float32Array,
+  isCurrent: () => boolean
+) {
+  if (!nativeProjection) {
     return new RegularVectorField(
       latitudes.value,
       longitudes.value,
@@ -871,52 +1002,78 @@ async function makeVectorField(uData: Float32Array, vData: Float32Array) {
       vData
     );
   }
-  const pole = await getRotatedNorthPole();
-  const geographicLatitudes = new Float32Array(uData.length);
-  const geographicLongitudes = new Float32Array(uData.length);
-  for (let y = 0; y < latitudes.value.length; y++) {
-    for (let x = 0; x < longitudes.value.length; x++) {
-      const index = y * longitudes.value.length + x;
-      const point = rotatedToGeographic(
-        latitudes.value[y],
-        longitudes.value[x],
-        pole.lat,
-        pole.lon
-      );
-      geographicLatitudes[index] = point.lat;
-      geographicLongitudes[index] = point.lon;
-    }
-  }
-  return new IrregularVectorField(
-    geographicLatitudes,
-    geographicLongitudes,
+  const coordinates = projectXYGridToLonLat(
+    longitudes.value,
+    latitudes.value,
+    projectedGrid!.crs
+  );
+  return IrregularVectorField.create(
+    coordinates.latitudes.data,
+    coordinates.longitudes.data,
     uData,
-    vData
+    vData,
+    {
+      isCancelled: () => !isCurrent() || !store.isStreamlineLayerEnabled(),
+      onProgress: (progress) => {
+        if (isCurrent() && store.isStreamlineLayerEnabled()) {
+          streamlines.setFieldProgress(progress);
+        }
+      },
+    }
   );
 }
 
+function selectedVectorPair() {
+  return resolveVectorVariablePair(
+    Object.keys(props.datasources?.levels[0]?.datasources ?? {}),
+    varnameSelector.value,
+    store.streamlineSelection,
+    store.isStreamlineLayerEnabled() ? store.streamlinePair : undefined
+  );
+}
+
+// eslint-disable-next-line max-lines-per-function
 async function updateStreamlines(
-  selectedIndices: (number | null | zarr.Slice)[]
+  selectedIndices: (number | null | zarr.Slice)[],
+  reuseCached = false
 ) {
   const requestRevision = ++streamlineRequestRevision;
-  const variableNames = Object.keys(
-    props.datasources?.levels[0]?.datasources ?? {}
-  );
-  const pair = resolveVectorVariablePair(
-    variableNames,
-    varnameSelector.value,
-    store.streamlineSelection
-  );
-  const supportedGrid = !isLatOnly.value;
-  if (!pair || !supportedGrid || !props.datasources) {
+  const pair = selectedVectorPair();
+  if (!pair || isLatOnly.value || !props.datasources) {
+    cachedMagnitude = undefined;
+    cachedStreamlineKey = undefined;
+    store.setStreamlineMagnitudeInfo(undefined);
     streamlines.clear();
     return;
   }
+  const requestKey = JSON.stringify({
+    indices: selectedIndices,
+    pair: [pair.u, pair.v],
+    level: store.streamlineLevelIndex,
+  });
+  if (
+    reuseCached &&
+    requestKey === cachedStreamlineKey &&
+    streamlines.showCached()
+  ) {
+    if (store.streamlineMagnitudeDisplayed && cachedMagnitude) {
+      await showMagnitude(cachedMagnitude);
+    }
+    return;
+  }
   if (!store.isStreamlineLayerEnabled()) {
-    streamlines.setAvailablePair(pair);
+    if (requestKey === cachedStreamlineKey) {
+      store.setStreamlinePair(pair);
+    } else {
+      cachedMagnitude = undefined;
+      cachedStreamlineKey = undefined;
+      store.setStreamlineMagnitudeInfo(undefined);
+      streamlines.setAvailablePair(pair);
+    }
     return;
   }
 
+  streamlines.startLoading();
   try {
     const components = await loadVectorComponents({
       pair,
@@ -926,19 +1083,62 @@ async function updateStreamlines(
       currentIndices: selectedIndices,
       spatialDimensionNames: selectedDimensionNames.value.slice(-2),
       expectedDataLength: latitudes.value.length * longitudes.value.length,
+      selectedLevelIndex: store.streamlineLevelIndex,
     });
     if (requestRevision !== streamlineRequestRevision) {
       return;
     }
-    if (!components) {
-      streamlines.clear();
+    store.setStreamlineLevelInfo(components?.levelInfo);
+    store.setStreamlineMagnitudeInfo(
+      components?.magnitudeInfo,
+      components?.canDeriveMagnitude
+    );
+    if (!components || components.incompatibility !== undefined) {
+      cachedMagnitude = undefined;
+      cachedStreamlineKey = undefined;
+      streamlines.clear(components?.incompatibility);
       return;
     }
-    const field = await makeVectorField(components.uData, components.vData);
-    if (requestRevision !== streamlineRequestRevision) {
+    if (
+      !(await streamlines.prepareField(
+        () => requestRevision === streamlineRequestRevision
+      ))
+    ) {
       return;
     }
-    streamlines.setField(field, pair);
+    const field = await makeVectorField(
+      components.uData,
+      components.vData,
+      () => requestRevision === streamlineRequestRevision
+    );
+    if (!field || requestRevision !== streamlineRequestRevision) {
+      return;
+    }
+    const magnitude =
+      components.magnitudeInfo && components.canDeriveMagnitude
+        ? createVectorMagnitudeData(
+            components.uData,
+            components.vData,
+            components.magnitudeInfo
+          )
+        : undefined;
+    const rendered = await streamlines.setField(
+      field,
+      pair,
+      () => requestRevision === streamlineRequestRevision,
+      async () => {
+        if (store.streamlineMagnitudeDisplayed && magnitude) {
+          await showMagnitude(magnitude);
+        } else {
+          await scalarCache.restoreScalar();
+        }
+      }
+    );
+    if (!rendered || requestRevision !== streamlineRequestRevision) {
+      return;
+    }
+    cachedMagnitude = magnitude;
+    cachedStreamlineKey = requestKey;
   } catch (error) {
     if (requestRevision === streamlineRequestRevision) {
       streamlines.clear();
@@ -947,28 +1147,32 @@ async function updateStreamlines(
   }
 }
 
+// eslint-disable-next-line max-lines-per-function
 async function fetchAndRenderData(
-  datavar: zarr.Array<zarr.DataType, zarr.AsyncReadable>
+  datavar: zarr.Array<zarr.DataType, zarr.AsyncReadable>,
+  isCurrent: () => boolean
 ) {
   const { dimensionRanges, indices } = await buildDimensionConfig(datavar);
 
   const variableData = await fetchRegularGridVariableData(indices);
   const rawData = castDataVarToFloat32(variableData);
 
+  if (!isCurrent()) {
+    return;
+  }
+  lastDatavar = datavar;
   const { min, max, missingValue, fillValue } = decodeVariableDataAndGetBounds(
     datavar,
     rawData
   );
 
-  updateMeshMaterials(rawData);
-
-  const hoverIndex = await buildHoverSamples(rawData);
-  setHoverLookupFromIndex(hoverIndex, fillValue, missingValue);
-
-  updateHistogram(rawData, min, max, missingValue, fillValue);
+  const hoverIndex = buildHoverSamples(rawData);
 
   lastStreamlineIndices = indices;
 
+  if (!isCurrent()) {
+    return;
+  }
   const dimInfo = await fetchDimensionDetails(
     varnameSelector.value,
     props.datasources!,
@@ -976,17 +1180,60 @@ async function fetchAndRenderData(
     indices
   );
 
-  store.updateVarInfo(
-    {
-      attrs: datavar.attrs,
-      dimInfo,
-      bounds: { low: min, high: max },
-      dimRanges: dimensionRanges,
-    },
-    indices as number[]
+  const scalarInfo = {
+    attrs: datavar.attrs,
+    dimInfo,
+    bounds: { low: min, high: max },
+    dimRanges: dimensionRanges,
+  };
+  const renderScalar = () => {
+    updateMeshMaterials(rawData);
+    setHoverLookupFromIndex(hoverIndex, fillValue, missingValue);
+  };
+  const volumeGrid =
+    isProjectedGrid.value || props.isRotated
+      ? projectedGrid
+      : !isLatOnly.value
+        ? {
+            kind: VOLUME_GRID_TYPES.REGULAR,
+            latitudes: latitudes.value,
+            longitudes: longitudes.value,
+          }
+        : undefined;
+  if (!isCurrent()) {
+    return;
+  }
+  volume.setContext(
+    volumeGrid
+      ? {
+          dimensionNames: selectedDimensionNames.value,
+          indices,
+          grid: volumeGrid,
+        }
+      : undefined
   );
-  redraw();
-  void updateStreamlines(indices);
+  scalarCache.captureScalar({
+    render: renderScalar,
+    info: scalarInfo,
+    indices: indices as number[],
+    data: rawData,
+    missingValue,
+    fillValue,
+    isCurrent,
+  });
+  await updateStreamlines(indices);
+  if (isCurrent() && !store.streamlineMagnitudeDisplayed) {
+    await scalarCache.restoreScalar();
+  }
+  if (isCurrent()) {
+    await rgbLayer.setContext({
+      indices,
+      dimRanges: dimensionRanges,
+      dimInfo,
+      varname: varnameSelector.value,
+      vars: props.datasources!.levels[0].datasources,
+    });
+  }
 }
 
 onBeforeMount(async () => {

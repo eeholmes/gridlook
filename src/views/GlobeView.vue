@@ -15,30 +15,48 @@ import {
   GRID_TYPES,
   type T_GRID_TYPES,
 } from "@/lib/data/gridTypeDetector.ts";
+import { withStoreXsrfToken } from "@/lib/data/icechunkStore.ts";
 import {
   fetchCurrentTimestep,
   liveStoreBaseUrl,
 } from "@/lib/data/liveTimestep.ts";
-import { getLocalNetCDF, isLocalNetCDFSource } from "@/lib/data/localNetCDF.ts";
+import {
+  getLocalNetCDF,
+  isLocalNetCDFSource,
+  isRemoteNetCDFSource,
+} from "@/lib/data/localNetCDF.ts";
 import {
   indexFromIndex,
   indexFromNetCDF,
   indexFromZarr,
 } from "@/lib/data/sourceIndexing.ts";
+import { splitSourceType } from "@/lib/data/sourceType.ts";
+import { getDefaultRange } from "@/lib/data/variableDecoding.ts";
 import { ZarrDataManager } from "@/lib/data/ZarrDataManager.ts";
+import { loadTextures } from "@/lib/layers/textureStore.ts";
 import { PROJECTION_TYPES, clamp } from "@/lib/projection/projectionUtils.ts";
 import {
   availableColormaps,
   type TColorMap,
 } from "@/lib/shaders/colormapShaders.ts";
 import { PresenterRole } from "@/lib/types/presenterSync.ts";
+import {
+  parseLayersParam,
+  type TLayerUrlEntry,
+} from "@/store/layerUrlState.ts";
 import { useUrlParameterStore } from "@/store/paramStore.ts";
-import { useGlobeControlStore } from "@/store/store.ts";
+import {
+  createBuiltinLayer,
+  LAYER_KINDS,
+  LAYER_OPACITY,
+  useGlobeControlStore,
+} from "@/store/store.ts";
 import { useLiveTimestep } from "@/store/useLiveTimestep.ts";
 import {
   usePresenterSync,
   isDisplayMode,
   isPresenterActive,
+  waitForLocalSource,
 } from "@/store/usePresenterSync.ts";
 import { useUrlSync } from "@/store/useUrlSync.ts";
 import Toast from "@/ui/common/Toast.vue";
@@ -53,7 +71,12 @@ import GridIrregularDelaunay from "@/ui/grids/IrregularDelaunay.vue";
 import GridRegular from "@/ui/grids/Regular.vue";
 import GridTriangular from "@/ui/grids/Triangular.vue";
 import AboutView from "@/ui/overlays/AboutModal.vue";
-import { toggleTimeAnimation } from "@/ui/overlays/controls/useTimeAnimation.ts";
+import BasemapAttribution from "@/ui/overlays/BasemapAttribution.vue";
+import {
+  isAnimationPlaying,
+  stopAnimation,
+  toggleTimeAnimation,
+} from "@/ui/overlays/controls/useTimeAnimation.ts";
 import GlobeControls from "@/ui/overlays/Controls.vue";
 import DistanceScale from "@/ui/overlays/DistanceScale.vue";
 import HoverReadout from "@/ui/overlays/HoverReadout.vue";
@@ -105,9 +128,7 @@ const {
   paramGridType,
   paramDistractionFree,
   paramLive,
-  paramStreamlines,
-  paramStreamlineU,
-  paramStreamlineV,
+  paramLayers,
 } = storeToRefs(urlParameterStore);
 
 type TGlobeHandle = {
@@ -247,7 +268,7 @@ function prepareDefaults(src: string, index: TSources) {
     return !varinfo.hidden;
   });
   varnameSelector.value =
-    paramVarname.value ?? modelInfo.value!.defaultVar ?? validVars[0];
+    paramVarname.value ?? modelInfo.value!.defaultVar ?? validVars[0] ?? "-";
 
   if (
     datasources.value &&
@@ -261,8 +282,9 @@ function prepareDefaults(src: string, index: TSources) {
         invertColormap.value = variableDefaults.default_colormap.inverted;
       }
     }
-    if (variableDefaults.default_range) {
-      store.updateBounds(variableDefaults.default_range);
+    const defaultRange = getDefaultRange(variableDefaults);
+    if (defaultRange) {
+      store.updateBounds(defaultRange);
     }
   }
 }
@@ -281,6 +303,9 @@ function resetForSourceChange(resetStore: boolean) {
         "projectionCenter",
         "catalogData",
         "catalogUrl",
+        "basemaps",
+        "basemapCatalogUrl",
+        "selectedBasemap",
         "controlPanelVisible",
         "layerStack",
       ]);
@@ -288,8 +313,9 @@ function resetForSourceChange(resetStore: boolean) {
       store.resetExcept([
         "catalogData",
         "catalogUrl",
+        "basemaps",
+        "basemapCatalogUrl",
         "controlPanelVisible",
-        "layerStack",
       ]);
     }
   }
@@ -303,17 +329,101 @@ async function initControlsFromSource() {
   controls.value?.initForDataset();
 }
 
-function initStreamlinesFromParams() {
-  store.setStreamlineLayerEnabled(paramStreamlines.value === "true");
-  if (paramStreamlineU.value || paramStreamlineV.value) {
-    store.setStreamlineSelection({
-      automatic: false,
-      u: paramStreamlineU.value || undefined,
-      v: paramStreamlineV.value || undefined,
-    });
-  } else {
-    store.resetStreamlineSelection();
+function findLayerParam<K extends TLayerUrlEntry["kind"]>(
+  entries: TLayerUrlEntry[],
+  kind: K
+) {
+  return entries.find((entry) => entry.kind === kind) as
+    Extract<TLayerUrlEntry, { kind: K }> | undefined;
+}
+
+// Built-in layers come from the `layers` parameter; texture layers already in
+// the stack stay on top.
+function initLayersFromParams() {
+  const entries = parseLayersParam(paramLayers.value);
+  store.layerStack = [
+    ...store.layerStack.filter((layer) => layer.kind === LAYER_KINDS.TEXTURE),
+    ...entries.map((entry) => ({
+      ...createBuiltinLayer(entry.kind),
+      visible: entry.visible,
+      opacity: "opacity" in entry ? entry.opacity : LAYER_OPACITY.MAX,
+    })),
+  ];
+
+  const coastlines = findLayerParam(entries, LAYER_KINDS.COASTLINES);
+  store.showCoastLines = coastlines?.visible ?? false;
+  if (coastlines) {
+    store.coastlineResolution = coastlines.resolution;
   }
+
+  const graticules = findLayerParam(entries, LAYER_KINDS.GRATICULES);
+  store.showGraticules = graticules?.visible ?? false;
+  if (graticules) {
+    store.graticuleSpacing = graticules.spacing;
+  }
+
+  const basemap = findLayerParam(entries, LAYER_KINDS.BASEMAP);
+  if (basemap) {
+    store.selectedBasemap = basemap.provider;
+    store.basemapOptions = basemap.options;
+  }
+  initDatasetLayersFromParams(entries);
+}
+
+// Variables unknown to this dataset fall back to the automatic pair or are
+// dropped from the volume.
+function initDatasetLayersFromParams(entries: TLayerUrlEntry[]) {
+  const vars = modelInfo.value?.vars ?? {};
+  const streamlines = findLayerParam(entries, LAYER_KINDS.STREAMLINES);
+  if (streamlines) {
+    if (
+      streamlines.u &&
+      streamlines.v &&
+      streamlines.u in vars &&
+      streamlines.v in vars
+    ) {
+      store.setStreamlineSelection({
+        automatic: false,
+        u: streamlines.u,
+        v: streamlines.v,
+      });
+    }
+    store.setStreamlineMagnitudeDisplayed(
+      streamlines.visible && streamlines.magnitude
+    );
+  }
+
+  const rgb = findLayerParam(entries, LAYER_KINDS.RGB);
+  if (rgb) {
+    store.updateRgbSettings(rgb.settings);
+  }
+
+  const volume = findLayerParam(entries, LAYER_KINDS.VOLUME);
+  if (volume) {
+    store.setVolumeSelections(
+      volume.selections.filter((selection) => selection.variable in vars)
+    );
+  }
+}
+
+// Stored texture layers are added on top of the stack, hidden.
+async function restoreStoredTextureLayers() {
+  try {
+    const stored = await loadTextures();
+    for (const texture of stored) {
+      if (!store.layerStack.some((layer) => layer.id === texture.id)) {
+        store.addTextureLayer(texture.id, texture.name, false);
+      }
+    }
+  } catch (error) {
+    logError(error, "Couldn't load stored texture layers");
+  }
+}
+
+function hasDisplayableVariable() {
+  return Object.values(modelInfo.value?.vars ?? {}).some(
+    (varinfo) => !varinfo.hidden
+  );
 }
 
 async function loadCurrentSource(resetStore = true) {
@@ -323,10 +433,30 @@ async function loadCurrentSource(resetStore = true) {
   if (updateId !== sourceUpdateId) {
     return;
   }
-  initStreamlinesFromParams();
+  if (sourceValid.value && !hasDisplayableVariable()) {
+    // Grid detection and the grid components need a selectable variable.
+    logError(
+      "The dataset only contains coordinates or variables without a spatial dimension.",
+      "No displayable variables"
+    );
+    detectedGridType.value = GRID_TYPES.ERROR;
+    store.stopLoading();
+    return;
+  }
+  initLayersFromParams();
+  void restoreStoredTextureLayers();
   await initControlsFromSource();
   isInitialized.value = true;
   await setGridType(true);
+}
+
+// A type prefix like `zarr3+` skips probing the other types and the JSON index.
+function indexFromRemote(src: string, tokenize: (store: string) => string) {
+  const { format, url } = splitSourceType(src);
+  const fetchSrc = tokenize(url);
+  return format === undefined
+    ? [indexFromZarr(fetchSrc), indexFromIndex(fetchSrc, tokenize)]
+    : [indexFromZarr(fetchSrc, format)];
 }
 
 async function updateSrc(updateId: number) {
@@ -334,6 +464,7 @@ async function updateSrc(updateId: number) {
   ZarrDataManager.invalidateCache();
   sourceValid.value = false;
   store.isInitializingVariable = true;
+  await waitForLocalSource(src);
   let indexPromises: Promise<TSources>[];
   if (isLocalNetCDFSource(src)) {
     const file = getLocalNetCDF(src);
@@ -344,12 +475,19 @@ async function updateSrc(updateId: number) {
             new Error("Please select the local NetCDF file again.")
           ),
         ];
+  } else if (isRemoteNetCDFSource(src)) {
+    indexPromises = [indexFromNetCDF(src, src)];
   } else {
     // FIXME: Trying zarr and json-index in parallel and picking the first that
     // works. If both fail, we log the last error which is from the json-index.
     // This leads to confusing error messages if the zarr source is supposed to
     // work but fails for some reason.
-    indexPromises = [indexFromZarr(src), indexFromIndex(src)];
+    // On JupyterHub, stores on the user's own server need Jupyter's XSRF
+    // token; it is added here, not to `src`, so the hash and the data-path
+    // input stay clean. Stores named inside a JSON index get it the same way.
+    const tokenize = (store: string) =>
+      withStoreXsrfToken(store, document.cookie, location.href);
+    indexPromises = indexFromRemote(src, tokenize);
   }
   const indices = await Promise.allSettled(indexPromises);
   let lastError = null;
@@ -540,6 +678,7 @@ useEventListener(window, "keydown", (e: KeyboardEvent) => {
       <GlobeControls
         ref="controls"
         :model-info="modelInfo"
+        :grid-type="activeGridType"
         :current-source="props.src"
         :info-panel-open="infoPanelOpen"
         @on-snapshot="makeSnapshot"
@@ -549,7 +688,20 @@ useEventListener(window, "keydown", (e: KeyboardEvent) => {
       />
     </div>
 
-    <div v-if="loading" class="top-right-loader loader" />
+    <div v-if="isAnimationPlaying" class="top-right-loader">
+      <button
+        type="button"
+        class="button is-ghost has-text-white is-fullwidth p-0 is-size-2"
+        title="Animation playing — click to stop"
+        aria-label="Stop animation"
+        @click="stopAnimation"
+      >
+        <span class="icon">
+          <i class="fa-solid fa-play fa-beat-fade" aria-hidden="true"></i>
+        </span>
+      </button>
+    </div>
+    <div v-else-if="loading" class="top-right-loader loader" />
     <section
       v-if="detectedGridType === GRID_TYPES.ERROR"
       class="hero is-fullheight w-100"
@@ -575,6 +727,7 @@ useEventListener(window, "keydown", (e: KeyboardEvent) => {
       />
       <HoverReadout v-if="detectedGridType !== undefined" />
       <DistanceScale v-if="detectedGridType !== undefined" />
+      <BasemapAttribution v-if="detectedGridType !== undefined" />
     </div>
     <div
       v-if="!isDisplayMode"

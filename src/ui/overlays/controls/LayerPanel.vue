@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { storeToRefs } from "pinia";
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import {
   SelectListbox,
   type SelectModelValue,
@@ -13,11 +13,17 @@ import {
 } from "vue3-select-component";
 import "vue3-select-component/styles.css";
 
-import { getVariableGroup } from "@/lib/data/vectorField.ts";
+import type { T_GRID_TYPES } from "@/lib/data/gridTypeDetector.ts";
 import {
-  LAND_SEA_MASK_MODES,
-  type TLandSeaMaskMode,
-} from "@/lib/layers/landSeaMask.ts";
+  getRgbDimensionOptions,
+  getRgbVariableOptions,
+  RGB_MAX_DIMENSION_LENGTH,
+} from "@/lib/data/rgbComposite.ts";
+import {
+  getVariableGroup,
+  levelAxesAreIdentical,
+} from "@/lib/data/vectorField.ts";
+import { LAND_SEA_MASK_MODES } from "@/lib/layers/equirectLayer.ts";
 import {
   isSupportedTextureLayerFile,
   TEXTURE_LAYER_UPLOAD_ACCEPT,
@@ -25,10 +31,10 @@ import {
 import {
   deleteTexture,
   getTexture,
-  loadTextures,
   saveTexture,
 } from "@/lib/layers/textureStore.ts";
 import type { TModelInfo } from "@/lib/types/GlobeTypes.ts";
+import { getVolumeUnavailableReason } from "@/lib/volume/volumeVariables.ts";
 import {
   BUILTIN_LAYER_NAMES,
   COASTLINE_RESOLUTIONS,
@@ -40,39 +46,68 @@ import {
   type TLayerKind,
 } from "@/store/store.ts";
 import { useLog } from "@/ui/common/useLog.ts";
+import RgbControls from "@/ui/overlays/controls/RgbControls.vue";
+import VolumeControls from "@/ui/overlays/controls/VolumeControls.vue";
+import { BasemapTileType, fetchBasemapCatalog } from "@/utils/basemap.ts";
 
 const props = defineProps<{
   modelInfo?: TModelInfo;
+  gridType?: T_GRID_TYPES;
 }>();
 
 const store = useGlobeControlStore();
 const {
   coastlineResolution,
+  dimSlidersValues,
   graticuleSpacing,
-  landSeaMaskChoice,
-  landSeaMaskUseTexture,
+  selectedBasemap,
   layerStack,
   showCoastLines,
   showGraticules,
   streamlinePair,
+  streamlineLoading,
+  streamlineProgress,
+  streamlineLoadingStage,
+  streamlineLevelIndex,
+  streamlineLevelInfo,
   streamlineSelection,
+  volumeLoading,
+  volumeProgress,
+  volumeAvailable,
+  rgbAvailable,
+  rgbLoading,
   varnameDisplay,
   varnameSelector,
+  varinfo,
 } = storeToRefs(store);
 const { logError } = useLog();
+
+const streamlineLoadingLabel = computed(() =>
+  streamlineProgress.value === undefined
+    ? streamlineLoadingStage.value
+    : `${streamlineLoadingStage.value}: ${streamlineProgress.value}%`
+);
 
 const fileInput = ref<HTMLInputElement>();
 const draggedId = ref<string | undefined>(undefined);
 const dropTargetIndex = ref<number | undefined>(undefined);
 const expandedLayerId = ref<string | undefined>(undefined);
+
+const isVectorBasemap = computed(
+  () =>
+    store.basemaps?.find((entry) => entry.id === store.selectedBasemap)
+      ?.type === BasemapTileType.VECTOR
+);
 const addLayerSelection = ref<TAddLayerAction | null>(null);
 const LAYER_ENTRY_SELECTOR = ".layer-entry";
 
 const ADD_LAYER_ACTIONS = {
   COASTLINES: LAYER_KINDS.COASTLINES,
   GRATICULES: LAYER_KINDS.GRATICULES,
-  MASK: LAYER_KINDS.MASK,
   STREAMLINES: LAYER_KINDS.STREAMLINES,
+  VOLUME: LAYER_KINDS.VOLUME,
+  RGB: LAYER_KINDS.RGB,
+  BASEMAP: LAYER_KINDS.BASEMAP,
   UPLOAD: "upload",
   VARIABLE_IMAGE: "variable-image",
 } as const;
@@ -85,17 +120,52 @@ type TAddLayerOption = {
   label: string;
   icon: string;
   disabled?: boolean;
+  disabledReason?: string;
 };
+
+const vectorVariableGroup = computed(() => {
+  const activePair = store.isStreamlineLayerEnabled()
+    ? streamlinePair.value
+    : undefined;
+  return getVariableGroup(activePair?.u ?? varnameSelector.value);
+});
 
 const vectorVariables = computed(() =>
   Object.keys(props.modelInfo?.vars ?? {})
     .filter(
       (name) =>
         !props.modelInfo?.vars[name].hidden &&
-        getVariableGroup(name) === getVariableGroup(varnameSelector.value)
+        getVariableGroup(name) === vectorVariableGroup.value
     )
     .sort((a, b) => a.localeCompare(b))
 );
+
+const volumeUnavailableReason = computed(() =>
+  getVolumeUnavailableReason(
+    props.modelInfo,
+    varnameSelector.value,
+    props.gridType,
+    volumeAvailable.value
+  )
+);
+
+const rgbUnavailableReason = computed(() => {
+  if (!rgbAvailable.value) {
+    return "RGB composites are drawn on HEALPix and regular grids only";
+  }
+  const options = getRgbDimensionOptions(
+    varinfo.value?.dimRanges,
+    varinfo.value?.dimInfo
+  );
+  // three arrays next to it can be the channels instead
+  const variables = getRgbVariableOptions(
+    props.modelInfo?.vars,
+    varnameSelector.value
+  );
+  return options.length === 0 && variables.length < 3
+    ? `This variable has no band-like dimension (3 to ${RGB_MAX_DIMENSION_LENGTH} entries, not time) and no three variables like it`
+    : undefined;
+});
 
 function vectorVariableLabel(name: string) {
   return name.slice(name.lastIndexOf("/") + 1);
@@ -129,112 +199,163 @@ type TLayerProperties = {
   buttons: TLayerButton[];
 };
 
+function setStreamlineLevel(value: string) {
+  const values = streamlineLevelInfo.value?.values;
+  if (!values) {
+    return;
+  }
+  const index = coordinateIndex(values, value);
+  if (index === -1) {
+    return;
+  }
+  const dimensionIndex = coupledScalarLevelDimensionIndex.value;
+  if (dimensionIndex === -1) {
+    store.setStreamlineLevelIndex(index);
+    return;
+  }
+  store.setStreamlineLevelIndex(index, false);
+  if (dimSlidersValues.value[dimensionIndex] !== index) {
+    dimSlidersValues.value[dimensionIndex] = index;
+  }
+}
+
+function selectedStreamlineLevelValue() {
+  const value = streamlineLevelInfo.value?.values[streamlineLevelIndex.value];
+  return value === undefined ? "" : String(value);
+}
+
+const coupledScalarLevelDimensionIndex = computed(() => {
+  if (!store.isStreamlineLayerEnabled()) {
+    return -1;
+  }
+  const dimensionName = streamlineLevelInfo.value?.dimensionName;
+  const exactIndex = varinfo.value?.dimRanges.findIndex(
+    (range) => range?.name === dimensionName
+  );
+  if (exactIndex === undefined || exactIndex === -1) {
+    return -1;
+  }
+  const scalarInfo = varinfo.value?.dimInfo[exactIndex];
+  const streamlineInfo = streamlineLevelInfo.value;
+  if (!scalarInfo || !("values" in scalarInfo) || !streamlineInfo) {
+    return -1;
+  }
+  return levelAxesAreIdentical(
+    {
+      dimensionName: varinfo.value!.dimRanges[exactIndex]!.name,
+      values: Array.from(scalarInfo.values),
+      units: scalarInfo.units,
+    },
+    streamlineInfo
+  )
+    ? exactIndex
+    : -1;
+});
+
+function coordinateIndex(values: ArrayLike<unknown>, value: unknown) {
+  const normalized = String(value);
+  return Array.from(values).findIndex(
+    (candidate) => String(candidate) === normalized
+  );
+}
+
+function syncStreamlineLevelFromScalar() {
+  const dimensionIndex = coupledScalarLevelDimensionIndex.value;
+  if (dimensionIndex === -1) {
+    return;
+  }
+  const scalarIndex = dimSlidersValues.value[dimensionIndex];
+  if (scalarIndex === null) {
+    return;
+  }
+  store.setStreamlineLevelIndex(scalarIndex, false);
+}
+
+function syncScalarLevelFromStreamline() {
+  const dimensionIndex = coupledScalarLevelDimensionIndex.value;
+  if (
+    dimensionIndex !== -1 &&
+    dimSlidersValues.value[dimensionIndex] !== streamlineLevelIndex.value
+  ) {
+    dimSlidersValues.value[dimensionIndex] = streamlineLevelIndex.value;
+  }
+}
+
+let pendingScalarVariable: string | undefined;
+
+watch(
+  () => varnameSelector.value,
+  (varname) => {
+    pendingScalarVariable = varname;
+  }
+);
+
+watch(
+  () => [...dimSlidersValues.value],
+  () => {
+    if (!pendingScalarVariable && !store.isInitializingVariable) {
+      syncStreamlineLevelFromScalar();
+    }
+  }
+);
+
+watch(
+  () => streamlineLevelInfo.value,
+  (levelInfo, previousLevelInfo) => {
+    if (
+      levelInfo &&
+      levelInfo !== previousLevelInfo &&
+      !pendingScalarVariable
+    ) {
+      syncStreamlineLevelFromScalar();
+    }
+  }
+);
+
+watch(
+  () => varinfo.value,
+  async () => {
+    const varname = pendingScalarVariable;
+    if (!varname || varname !== varnameSelector.value) {
+      return;
+    }
+    // Let the new grid consume its initialization write before requesting a
+    // second slice aligned to the preserved streamline level.
+    await nextTick();
+    if (
+      pendingScalarVariable !== varname ||
+      varname !== varnameSelector.value
+    ) {
+      return;
+    }
+    pendingScalarVariable = undefined;
+    syncScalarLevelFromStreamline();
+  }
+);
+
+function streamlineLevelLabel() {
+  return (
+    streamlineLevelInfo.value?.longName ??
+    streamlineLevelInfo.value?.dimensionName ??
+    "Level"
+  );
+}
+
+function formatStreamlineLevel(value: number | bigint | string) {
+  const units = streamlineLevelInfo.value?.units?.trim();
+  return units ? `${String(value)} ${units}` : String(value);
+}
+
 const LAYER_ICONS: Record<TLayerKind, string> = {
   [LAYER_KINDS.COASTLINES]: "fa-earth-europe",
   [LAYER_KINDS.GRATICULES]: "fa-globe",
   [LAYER_KINDS.GRID]: "fa-border-all",
-  [LAYER_KINDS.MASK]: "fa-mask",
   [LAYER_KINDS.STREAMLINES]: "fa-wind",
+  [LAYER_KINDS.VOLUME]: "fa-cloud",
+  [LAYER_KINDS.RGB]: "fa-palette",
   [LAYER_KINDS.TEXTURE]: "fa-image",
+  [LAYER_KINDS.BASEMAP]: "fa-mask",
 };
-
-const MASK_LAYER_OPTIONS = {
-  GLOBE: "globe",
-  GLOBE_SIMPLE: "globe_simple",
-  LAND: "land",
-  LAND_SIMPLE: "land_simple",
-  SEA: "sea",
-  SEA_SIMPLE: "sea_simple",
-} as const;
-
-type TMaskLayerOption =
-  (typeof MASK_LAYER_OPTIONS)[keyof typeof MASK_LAYER_OPTIONS];
-
-type TVisibleLandSeaMaskMode = Exclude<
-  TLandSeaMaskMode,
-  typeof LAND_SEA_MASK_MODES.OFF
->;
-
-const MASK_LAYER_OPTION_CONFIG: Record<
-  TMaskLayerOption,
-  { mode: TVisibleLandSeaMaskMode; useTexture: boolean }
-> = {
-  [MASK_LAYER_OPTIONS.GLOBE]: {
-    mode: LAND_SEA_MASK_MODES.GLOBE,
-    useTexture: true,
-  },
-  [MASK_LAYER_OPTIONS.GLOBE_SIMPLE]: {
-    mode: LAND_SEA_MASK_MODES.GLOBE,
-    useTexture: false,
-  },
-  [MASK_LAYER_OPTIONS.LAND]: {
-    mode: LAND_SEA_MASK_MODES.LAND,
-    useTexture: true,
-  },
-  [MASK_LAYER_OPTIONS.LAND_SIMPLE]: {
-    mode: LAND_SEA_MASK_MODES.LAND,
-    useTexture: false,
-  },
-  [MASK_LAYER_OPTIONS.SEA]: {
-    mode: LAND_SEA_MASK_MODES.SEA,
-    useTexture: true,
-  },
-  [MASK_LAYER_OPTIONS.SEA_SIMPLE]: {
-    mode: LAND_SEA_MASK_MODES.SEA,
-    useTexture: false,
-  },
-};
-
-function getMaskLayerOption(
-  mode: TLandSeaMaskMode,
-  useTexture: boolean
-): TMaskLayerOption {
-  if (mode === LAND_SEA_MASK_MODES.GLOBE) {
-    return useTexture
-      ? MASK_LAYER_OPTIONS.GLOBE
-      : MASK_LAYER_OPTIONS.GLOBE_SIMPLE;
-  }
-  if (mode === LAND_SEA_MASK_MODES.SEA) {
-    return useTexture ? MASK_LAYER_OPTIONS.SEA : MASK_LAYER_OPTIONS.SEA_SIMPLE;
-  }
-  return useTexture ? MASK_LAYER_OPTIONS.LAND : MASK_LAYER_OPTIONS.LAND_SIMPLE;
-}
-
-const lastVisibleMaskLayerOption = ref<TMaskLayerOption>(
-  getMaskLayerOption(landSeaMaskChoice.value, landSeaMaskUseTexture.value)
-);
-
-const maskLayerOption = computed<TMaskLayerOption>({
-  get() {
-    if (landSeaMaskChoice.value === LAND_SEA_MASK_MODES.OFF) {
-      return lastVisibleMaskLayerOption.value;
-    }
-    return getMaskLayerOption(
-      landSeaMaskChoice.value,
-      landSeaMaskUseTexture.value
-    );
-  },
-  set(value) {
-    const config = MASK_LAYER_OPTION_CONFIG[value];
-    lastVisibleMaskLayerOption.value = value;
-    landSeaMaskChoice.value = config.mode;
-    landSeaMaskUseTexture.value = config.useTexture;
-  },
-});
-
-function toggleMaskLayerVisibility() {
-  if (landSeaMaskChoice.value === LAND_SEA_MASK_MODES.OFF) {
-    const config = MASK_LAYER_OPTION_CONFIG[lastVisibleMaskLayerOption.value];
-    landSeaMaskChoice.value = config.mode;
-    landSeaMaskUseTexture.value = config.useTexture;
-    return;
-  }
-  lastVisibleMaskLayerOption.value = getMaskLayerOption(
-    landSeaMaskChoice.value,
-    landSeaMaskUseTexture.value
-  );
-  landSeaMaskChoice.value = LAND_SEA_MASK_MODES.OFF;
-}
 
 const LAYER_PROPERTIES: Record<TLayerKind, TLayerProperties> = {
   [LAYER_KINDS.COASTLINES]: {
@@ -244,12 +365,15 @@ const LAYER_PROPERTIES: Record<TLayerKind, TLayerProperties> = {
     buttons: [LAYER_BUTTONS.REMOVE],
   },
   [LAYER_KINDS.GRID]: {
-    buttons: [],
-  },
-  [LAYER_KINDS.MASK]: {
-    buttons: [LAYER_BUTTONS.OPACITY, LAYER_BUTTONS.REMOVE],
+    buttons: [LAYER_BUTTONS.OPACITY],
   },
   [LAYER_KINDS.STREAMLINES]: {
+    buttons: [LAYER_BUTTONS.OPACITY, LAYER_BUTTONS.REMOVE],
+  },
+  [LAYER_KINDS.VOLUME]: {
+    buttons: [LAYER_BUTTONS.OPACITY, LAYER_BUTTONS.REMOVE],
+  },
+  [LAYER_KINDS.RGB]: {
     buttons: [LAYER_BUTTONS.OPACITY, LAYER_BUTTONS.REMOVE],
   },
   [LAYER_KINDS.TEXTURE]: {
@@ -259,18 +383,30 @@ const LAYER_PROPERTIES: Record<TLayerKind, TLayerProperties> = {
       LAYER_BUTTONS.REMOVE,
     ],
   },
+  [LAYER_KINDS.BASEMAP]: {
+    buttons: [LAYER_BUTTONS.OPACITY, LAYER_BUTTONS.REMOVE],
+  },
 };
 
 onMounted(async () => {
   try {
-    const stored = await loadTextures();
-    for (const texture of stored) {
-      if (!layerStack.value.some((layer) => layer.id === texture.id)) {
-        store.addTextureLayer(texture.id, texture.name, false);
-      }
+    if (store.basemapCatalogUrl === undefined) {
+      throw new Error("No basemap url found.");
     }
+    const catalog = await fetchBasemapCatalog(store.basemapCatalogUrl);
+
+    if (typeof catalog !== "object") {
+      throw new Error(
+        "failed to parse the catalog. Make sure it is available and valid JSON."
+      );
+    } else if (catalog === null) {
+      throw new Error("Failed to fetch the catalog.");
+    } else if (catalog.basemaps.length === 0) {
+      throw new Error("The fetched catalog does not contain any entries.");
+    }
+    store.updateBasemaps(catalog.basemaps);
   } catch (error) {
-    logError(error, "Couldn't load stored texture layers");
+    logError(error, "Couldn't load the list of basemaps");
   }
 });
 
@@ -323,6 +459,11 @@ async function downloadLayer(layer: TLayerEntry) {
 }
 
 function onDragStart(event: DragEvent, layer: TLayerEntry) {
+  if (isLayerControl(event.target) || isLayerControl(document.activeElement)) {
+    event.preventDefault();
+    endDrag();
+    return;
+  }
   draggedId.value = layer.id;
   event.dataTransfer!.effectAllowed = "move";
 }
@@ -343,7 +484,9 @@ function isLayerControl(target: EventTarget | null) {
   return (
     target instanceof Element &&
     Boolean(
-      target.closest(".layer-actions, .layer-details, .streamline-components")
+      target.closest(
+        ".layer-actions, .layer-details, .streamline-components, .volume-controls, .rgb-layer-controls"
+      )
     )
   );
 }
@@ -401,13 +544,16 @@ function isLayerVisible(layer: TLayerEntry) {
   if (layer.kind === LAYER_KINDS.GRATICULES) {
     return showGraticules.value;
   }
-  if (layer.kind === LAYER_KINDS.MASK) {
-    return landSeaMaskChoice.value !== LAND_SEA_MASK_MODES.OFF;
-  }
   return layer.visible;
 }
 
 function isLayerAvailable(layer: TLayerEntry) {
+  if (layer.kind === LAYER_KINDS.VOLUME) {
+    return !volumeUnavailableReason.value;
+  }
+  if (layer.kind === LAYER_KINDS.RGB) {
+    return rgbAvailable.value;
+  }
   return layer.kind !== LAYER_KINDS.STREAMLINES || Boolean(props.modelInfo);
 }
 
@@ -419,6 +565,7 @@ function hasDisplayedLayer(kind: TLayerKind) {
   return displayedLayerStack.value.some((layer) => layer.kind === kind);
 }
 
+// eslint-disable-next-line max-lines-per-function
 const addLayerOptions = computed<TAddLayerOption[]>(() => {
   const options: TAddLayerOption[] = [];
   if (!hasDisplayedLayer(LAYER_KINDS.COASTLINES)) {
@@ -435,19 +582,37 @@ const addLayerOptions = computed<TAddLayerOption[]>(() => {
       icon: LAYER_ICONS[LAYER_KINDS.GRATICULES],
     });
   }
-  if (!hasDisplayedLayer(LAYER_KINDS.MASK)) {
-    options.push({
-      value: ADD_LAYER_ACTIONS.MASK,
-      label: BUILTIN_LAYER_NAMES[LAYER_KINDS.MASK],
-      icon: LAYER_ICONS[LAYER_KINDS.MASK],
-    });
-  }
   if (!hasDisplayedLayer(LAYER_KINDS.STREAMLINES)) {
     options.push({
       value: ADD_LAYER_ACTIONS.STREAMLINES,
       label: BUILTIN_LAYER_NAMES[LAYER_KINDS.STREAMLINES],
       icon: LAYER_ICONS[LAYER_KINDS.STREAMLINES],
       disabled: !props.modelInfo,
+    });
+  }
+  if (!hasDisplayedLayer(LAYER_KINDS.VOLUME)) {
+    options.push({
+      value: ADD_LAYER_ACTIONS.VOLUME,
+      label: BUILTIN_LAYER_NAMES[LAYER_KINDS.VOLUME],
+      icon: LAYER_ICONS[LAYER_KINDS.VOLUME],
+      disabled: Boolean(volumeUnavailableReason.value),
+      disabledReason: volumeUnavailableReason.value,
+    });
+  }
+  if (!hasDisplayedLayer(LAYER_KINDS.RGB)) {
+    options.push({
+      value: ADD_LAYER_ACTIONS.RGB,
+      label: BUILTIN_LAYER_NAMES[LAYER_KINDS.RGB],
+      icon: LAYER_ICONS[LAYER_KINDS.RGB],
+      disabled: Boolean(rgbUnavailableReason.value),
+      disabledReason: rgbUnavailableReason.value,
+    });
+  }
+  if (!hasDisplayedLayer(LAYER_KINDS.BASEMAP)) {
+    options.push({
+      value: ADD_LAYER_ACTIONS.BASEMAP,
+      label: BUILTIN_LAYER_NAMES[LAYER_KINDS.BASEMAP],
+      icon: LAYER_ICONS[LAYER_KINDS.BASEMAP],
     });
   }
   options.push(
@@ -480,16 +645,17 @@ function addLayer(action: TAddLayerAction) {
     if (!showGraticules.value) {
       store.toggleGraticules();
     }
-  } else if (action === ADD_LAYER_ACTIONS.MASK) {
-    store.restoreBuiltinLayer(LAYER_KINDS.MASK);
-    if (landSeaMaskChoice.value === LAND_SEA_MASK_MODES.OFF) {
-      const config = MASK_LAYER_OPTION_CONFIG[lastVisibleMaskLayerOption.value];
-      landSeaMaskChoice.value = config.mode;
-      landSeaMaskUseTexture.value = config.useTexture;
-    }
   } else if (action === ADD_LAYER_ACTIONS.STREAMLINES) {
     store.restoreBuiltinLayer(LAYER_KINDS.STREAMLINES);
     store.setStreamlineLayerEnabled(true);
+  } else if (action === ADD_LAYER_ACTIONS.VOLUME) {
+    store.restoreBuiltinLayer(LAYER_KINDS.VOLUME);
+    store.setVolumeLayerEnabled(true);
+  } else if (action === ADD_LAYER_ACTIONS.RGB) {
+    store.setRgbLayerEnabled(true);
+  } else if (action === ADD_LAYER_ACTIONS.BASEMAP) {
+    store.restoreBuiltinLayer(LAYER_KINDS.BASEMAP);
+    store.setBasemapLayerEnabled(true);
   } else if (action === ADD_LAYER_ACTIONS.UPLOAD) {
     fileInput.value?.click();
   } else if (
@@ -526,8 +692,6 @@ function toggleLayer(layer: TLayerEntry) {
     store.toggleCoastLines();
   } else if (layer.kind === LAYER_KINDS.GRATICULES) {
     store.toggleGraticules();
-  } else if (layer.kind === LAYER_KINDS.MASK) {
-    toggleMaskLayerVisibility();
   } else if (layer.kind === LAYER_KINDS.TEXTURE) {
     store.updateTextureLayer(layer.id, { visible: !layer.visible });
   } else {
@@ -554,6 +718,9 @@ function getLayerName(layer: TLayerEntry) {
   if (layer.kind === LAYER_KINDS.GRID && varnameDisplay.value !== "-") {
     return `${layer.name}: ${varnameDisplay.value}`;
   }
+  if (layer.kind === LAYER_KINDS.STREAMLINES) {
+    return "Streamlines integrated with Euler's method";
+  }
   return layer.name;
 }
 </script>
@@ -571,6 +738,10 @@ function getLayerName(layer: TLayerEntry) {
           'is-dragging': draggedId === layer.id,
         }"
         :data-layer-index="getLayerStackIndex(layer)"
+        :aria-busy="
+          (layer.kind === LAYER_KINDS.STREAMLINES && streamlineLoading) ||
+          (layer.kind === LAYER_KINDS.RGB && rgbLoading)
+        "
         @dragstart="onDragStart($event, layer)"
         @dragover="onDragOver($event, getLayerStackIndex(layer))"
         @drop="onDrop(getLayerStackIndex(layer))"
@@ -586,11 +757,49 @@ function getLayerName(layer: TLayerEntry) {
           </span>
           <span class="layer-name is-size-7" :title="getLayerName(layer)">
             {{ layer.name }}
+            <span
+              v-if="layer.kind === LAYER_KINDS.VOLUME && volumeLoading"
+              class="layer-progress ml-1"
+              title="Preparing volume"
+            >
+              <span class="icon is-small" aria-hidden="true">
+                <span class="loader"></span>
+              </span>
+              <span>{{ volumeProgress ?? 0 }}%</span>
+            </span>
+            <span
+              v-if="layer.kind === LAYER_KINDS.RGB && rgbLoading"
+              class="layer-progress ml-1"
+              title="Loading RGB channels"
+            >
+              <span class="icon is-small" aria-hidden="true">
+                <span class="loader"></span>
+              </span>
+            </span>
             <template
               v-if="layer.kind === LAYER_KINDS.GRID && varnameDisplay !== '-'"
             >
               : <strong class="is-family-code">{{ varnameDisplay }}</strong>
             </template>
+            <span
+              v-if="layer.kind === LAYER_KINDS.STREAMLINES && streamlineLoading"
+              class="layer-progress ml-1"
+              role="img"
+              tabindex="0"
+              title=""
+              :aria-label="streamlineLoadingLabel"
+            >
+              <span class="icon is-small" aria-hidden="true">
+                <span class="loader"></span>
+              </span>
+              <span aria-hidden="true">{{ streamlineProgress ?? 0 }}%</span>
+              <span
+                class="streamline-progress-tooltip box px-2 py-1"
+                aria-hidden="true"
+              >
+                {{ streamlineLoadingStage }}
+              </span>
+            </span>
           </span>
         </div>
         <div class="layer-actions">
@@ -610,28 +819,6 @@ function getLayerName(layer: TLayerEntry) {
                 </option>
                 <option :value="GRATICULE_SPACINGS.THIRTY_DEGREES">
                   30&deg;
-                </option>
-              </select>
-            </div>
-          </template>
-          <template v-if="layer.kind === LAYER_KINDS.MASK">
-            <div class="select is-small layer-select">
-              <select
-                id="land_sea_mask"
-                v-model="maskLayerOption"
-                :title="BUILTIN_LAYER_NAMES[LAYER_KINDS.MASK]"
-              >
-                <option :value="MASK_LAYER_OPTIONS.GLOBE">Globe</option>
-                <option :value="MASK_LAYER_OPTIONS.GLOBE_SIMPLE">
-                  Globe simple
-                </option>
-                <option :value="MASK_LAYER_OPTIONS.LAND">Land</option>
-                <option :value="MASK_LAYER_OPTIONS.LAND_SIMPLE">
-                  Land simple
-                </option>
-                <option :value="MASK_LAYER_OPTIONS.SEA">Sea</option>
-                <option :value="MASK_LAYER_OPTIONS.SEA_SIMPLE">
-                  Sea simple
                 </option>
               </select>
             </div>
@@ -661,6 +848,19 @@ function getLayerName(layer: TLayerEntry) {
               >Active data</span
             >
           </template>
+          <template v-if="layer.kind === LAYER_KINDS.BASEMAP">
+            <div class="select is-small layer-select">
+              <select v-model="selectedBasemap" title="Basemap">
+                <option
+                  v-for="entry in store.basemaps"
+                  :key="entry.id"
+                  :value="entry.id"
+                >
+                  {{ entry.name }}
+                </option>
+              </select>
+            </div>
+          </template>
           <button
             v-if="LAYER_PROPERTIES[layer.kind].buttons.length >= 1"
             class="button is-small is-light layer-expand-button"
@@ -678,7 +878,7 @@ function getLayerName(layer: TLayerEntry) {
             class="button is-small is-light"
             :class="{ 'is-info': isLayerVisible(layer) }"
             type="button"
-            :disabled="layer.kind === LAYER_KINDS.STREAMLINES && !modelInfo"
+            :disabled="!isLayerAvailable(layer)"
             :title="isLayerVisible(layer) ? 'Hide layer' : 'Show layer'"
             :aria-pressed="isLayerVisible(layer)"
             @click="toggleLayer(layer)"
@@ -702,21 +902,35 @@ function getLayerName(layer: TLayerEntry) {
           >
             <span class="layer-opacity-header">
               <span>Opacity</span>
-              <span class="tag is-light layer-opacity-value">
+              <input
+                class="layer-opacity"
+                type="range"
+                :min="LAYER_OPACITY.MIN"
+                :max="LAYER_OPACITY.MAX"
+                :step="LAYER_OPACITY.STEP"
+                :value="getLayerOpacity(layer)"
+                :aria-label="`${layer.name} opacity`"
+                @input="setLayerOpacity(layer, $event)"
+              />
+              <span class="tag layer-opacity-value">
                 {{ formatLayerOpacity(layer) }}
               </span>
             </span>
-            <input
-              class="layer-opacity"
-              type="range"
-              :min="LAYER_OPACITY.MIN"
-              :max="LAYER_OPACITY.MAX"
-              :step="LAYER_OPACITY.STEP"
-              :value="getLayerOpacity(layer)"
-              :aria-label="`${layer.name} opacity`"
-              @input="setLayerOpacity(layer, $event)"
-            />
           </label>
+          <div v-if="layer.kind === LAYER_KINDS.BASEMAP" class="mt-2 is-size-7">
+            <label class="checkbox mr-3">
+              <input v-model="store.basemapOptions.water" type="checkbox" />
+              Water
+            </label>
+            <label class="checkbox mr-3">
+              <input v-model="store.basemapOptions.land" type="checkbox" />
+              Land
+            </label>
+            <label v-if="isVectorBasemap" class="checkbox">
+              <input v-model="store.basemapOptions.labels" type="checkbox" />
+              Labels
+            </label>
+          </div>
           <div
             v-if="
               LAYER_PROPERTIES[layer.kind].buttons.includes(
@@ -822,7 +1036,65 @@ function getLayerName(layer: TLayerEntry) {
               </select>
             </span>
           </label>
+          <label v-if="streamlineLevelInfo" class="streamline-level">
+            <span :title="streamlineLevelLabel()">Level</span>
+            <span class="select is-small">
+              <select
+                :value="selectedStreamlineLevelValue()"
+                :aria-label="streamlineLevelLabel()"
+                @change="
+                  setStreamlineLevel(($event.target as HTMLSelectElement).value)
+                "
+              >
+                <option
+                  v-for="(value, levelIndex) in streamlineLevelInfo.values"
+                  :key="levelIndex"
+                  :value="String(value)"
+                >
+                  {{ formatStreamlineLevel(value) }}
+                </option>
+              </select>
+            </span>
+          </label>
+          <div class="streamline-magnitude">
+            <p
+              v-if="store.streamlineIncompatibility"
+              class="help is-warning mb-2"
+              role="status"
+            >
+              {{ store.streamlineIncompatibility }}
+            </p>
+            <button
+              class="button is-small is-fullwidth"
+              :class="{ 'is-info': store.streamlineMagnitudeRequested }"
+              type="button"
+              :aria-pressed="store.streamlineMagnitudeRequested"
+              :disabled="
+                !store.streamlineMagnitudeDerivable &&
+                !store.streamlineMagnitudeRequested
+              "
+              title="Color the background by the strength of the selected vector field"
+              @click="
+                store.setStreamlineMagnitudeDisplayed(
+                  !store.streamlineMagnitudeRequested,
+                  true
+                )
+              "
+            >
+              Show derived vectorfield magnitude variable
+            </button>
+          </div>
         </div>
+        <RgbControls
+          v-if="layer.kind === LAYER_KINDS.RGB && isLayerVisible(layer)"
+          class="rgb-layer-controls"
+          :model-info="modelInfo"
+        />
+        <VolumeControls
+          v-if="layer.kind === LAYER_KINDS.VOLUME && isLayerVisible(layer)"
+          class="volume-controls"
+          :model-info="modelInfo"
+        />
       </li>
     </ul>
     <SelectRoot
@@ -848,12 +1120,18 @@ function getLayerName(layer: TLayerEntry) {
             :value="option.value"
             :label="option.label"
             :disabled="option.disabled"
+            :aria-description="option.disabledReason"
           >
             <span class="add-layer-option">
               <span class="icon is-small">
                 <i class="fa-solid" :class="option.icon"></i>
               </span>
-              <span>{{ option.label }}</span>
+              <span>
+                {{ option.label }}
+                <span v-if="option.disabledReason" class="is-block is-size-7">
+                  {{ option.disabledReason }}
+                </span>
+              </span>
             </span>
           </SelectOption>
         </SelectListbox>
@@ -906,6 +1184,7 @@ function getLayerName(layer: TLayerEntry) {
 }
 
 .layer-drag-handle {
+  position: relative;
   display: flex;
   align-items: center;
   align-self: stretch;
@@ -914,6 +1193,28 @@ function getLayerName(layer: TLayerEntry) {
   min-width: 4rem;
   cursor: grab;
   touch-action: none;
+}
+
+.layer-progress {
+  --bulma-border: var(--bulma-info);
+  display: inline-flex;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.streamline-progress-tooltip {
+  // Anchor to the drag handle, outside the layer name's clipped overflow.
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  z-index: 1000;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.layer-progress:hover .streamline-progress-tooltip,
+.layer-progress:focus-visible .streamline-progress-tooltip {
+  visibility: visible;
 }
 
 .streamline-components {
@@ -935,6 +1236,22 @@ function getLayerName(layer: TLayerEntry) {
   select {
     width: 100%;
   }
+
+  .streamline-level,
+  .streamline-magnitude {
+    grid-column: 1 / -1;
+  }
+
+  .streamline-magnitude .button {
+    height: auto;
+    white-space: normal;
+  }
+}
+
+.volume-controls,
+.rgb-layer-controls {
+  flex-basis: 100%;
+  padding-left: 1.65rem;
 }
 
 .layer-name {
@@ -1047,5 +1364,13 @@ function getLayerName(layer: TLayerEntry) {
   --vs-option-hover-background-color: var(--bulma-scheme-main-bis, #fafafa);
   --vs-option-focused-background-color: var(--bulma-scheme-main-ter, #f5f5f5);
   --vs-option-selected-background-color: var(--bulma-info-soft, #eef6fc);
+}
+
+@media (max-width: 480px) {
+  .volume-controls,
+  .rgb-layer-controls,
+  .streamline-components {
+    padding-left: 0;
+  }
 }
 </style>

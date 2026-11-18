@@ -17,10 +17,12 @@ import TransformControls from "./controls/TransformControls.vue";
 import VariableSelector from "./controls/VariableSelector.vue";
 
 // Import control components
+import type { T_GRID_TYPES } from "@/lib/data/gridTypeDetector.ts";
 import {
   toValueTransform,
   valueTransformScaleLabel,
 } from "@/lib/data/valueTransform.ts";
+import { getDefaultRange } from "@/lib/data/variableDecoding.ts";
 import {
   clamp,
   PROJECTION_TYPES,
@@ -37,6 +39,7 @@ import { MOBILE_BREAKPOINT } from "@/ui/common/viewConstants.ts";
 
 const props = defineProps<{
   modelInfo?: TModelInfo;
+  gridType?: T_GRID_TYPES;
   currentSource: string;
   infoPanelOpen: boolean;
 }>();
@@ -62,8 +65,6 @@ const {
   invertColormap,
   posterizeLevels,
   varnameSelector,
-  landSeaMaskChoice,
-  landSeaMaskUseTexture,
   varinfo,
   userBoundsLow,
   userBoundsHigh,
@@ -74,6 +75,9 @@ const {
 
 // Bounds logic state
 const pickedBoundsMode = ref<TBoundModes>(BOUND_MODES.DATA);
+let scalarBounds:
+  | { low: number | undefined; high: number | undefined; mode: TBoundModes }
+  | undefined;
 
 // Colormap logic state
 const userHasSelectedColormap = ref<boolean>(false);
@@ -85,8 +89,6 @@ const {
   paramPosterizeLevels,
   paramHideLowerBound,
   paramHideUpperBound,
-  paramMaskMode,
-  paramMaskingUseTexture,
   paramProjection,
   paramLat,
   paramLon,
@@ -144,10 +146,12 @@ const currentBounds = computed(() => {
 });
 
 const setDefaultBounds = () => {
-  const defaultConfig = props.modelInfo?.vars[varnameSelector.value];
-  if (defaultConfig?.default_range) {
-    userBoundsLow.value = defaultConfig.default_range.low;
-    userBoundsHigh.value = defaultConfig.default_range.high;
+  const defaultRange = getDefaultRange(
+    props.modelInfo?.vars[varnameSelector.value]
+  );
+  if (defaultRange && "low" in defaultRange) {
+    userBoundsLow.value = defaultRange.low;
+    userBoundsHigh.value = defaultRange.high;
     return;
   }
 };
@@ -167,9 +171,35 @@ const isHidden = computed(() => {
   );
 });
 
+function updateMagnitudeBounds(displayed: boolean) {
+  if (displayed) {
+    scalarBounds = {
+      low: userBoundsLow.value,
+      high: userBoundsHigh.value,
+      mode: pickedBoundsMode.value,
+    };
+    store.resetUserBounds();
+    pickedBoundsMode.value = BOUND_MODES.DATA;
+  } else if (scalarBounds) {
+    userBoundsLow.value = scalarBounds.low;
+    userBoundsHigh.value = scalarBounds.high;
+    pickedBoundsMode.value = scalarBounds.mode;
+    scalarBounds = undefined;
+  }
+}
+
 watch(
-  () => varnameSelector.value,
-  () => {
+  [
+    () => varnameSelector.value,
+    () =>
+      store.streamlineMagnitudeDisplayed && store.streamlineMagnitudeDerivable,
+  ],
+  ([variable, magnitudeDisplayed], [previousVariable]) => {
+    if (variable === previousVariable) {
+      updateMagnitudeBounds(magnitudeDisplayed);
+      return;
+    }
+    scalarBounds = undefined;
     // On the very first variable load, URL-provided bounds (already written to
     // the store by HashGlobeView) must not be overwritten by the variable's
     // default_range config.  On subsequent variable changes we always want to
@@ -192,6 +222,9 @@ watch(
       pickedBoundsMode.value = BOUND_MODES.USER;
     }
     setDefaultColormap();
+    if (magnitudeDisplayed) {
+      updateMagnitudeBounds(true);
+    }
   }
 );
 
@@ -253,7 +286,6 @@ function initDatasetControls() {
   initFromParams();
 }
 
-// eslint-disable-next-line max-lines-per-function
 function initFromParams() {
   if (paramColormap.value) {
     colormap.value = paramColormap.value;
@@ -278,17 +310,6 @@ function initFromParams() {
   }
   if (paramHideUpperBound.value === "true") {
     store.hideUpperBound = true;
-  }
-  if (paramMaskingUseTexture.value) {
-    if (paramMaskingUseTexture.value === "false") {
-      landSeaMaskUseTexture.value = false;
-    } else if (paramMaskingUseTexture.value === "true") {
-      landSeaMaskUseTexture.value = true;
-    }
-  }
-  if (paramMaskMode.value) {
-    landSeaMaskChoice.value =
-      paramMaskMode.value as typeof landSeaMaskChoice.value;
   }
   if (paramProjection.value) {
     const projection = paramProjection.value as TProjectionType;
@@ -413,45 +434,45 @@ defineExpose({
             @colormap-user-selected="userHasSelectedColormap = true"
             @force-user-bounds="pickedBoundsMode = BOUND_MODES.USER"
           />
-          <div class="section-title mt-2">Projections</div>
+        </CollapsibleCard>
+        <CollapsibleCard title="Projections">
           <ProjectionControls />
-          <div class="section-title mt-2 is-flex is-align-items-center">
-            Layers and Masks
-            <div class="ml-2">
-              <PopupDialog dialog-class="layer-help-dialog">
-                <template #trigger="{ toggle, open }">
-                  <button
-                    class="button is-ghost p-0"
-                    type="button"
-                    title="Layer help"
-                    aria-label="Layer help"
-                    :aria-expanded="open"
-                    @click.stop="toggle"
-                  >
-                    <span class="icon is-small">
-                      <i
-                        class="fa-solid fa-circle-question"
-                        aria-hidden="true"
-                      ></i>
-                    </span>
-                  </button>
-                </template>
+        </CollapsibleCard>
+        <CollapsibleCard title="Layers and Masks">
+          <template #title>
+            <PopupDialog dialog-class="layer-help-dialog">
+              <template #trigger="{ toggle, open }">
+                <button
+                  class="button is-ghost p-0"
+                  type="button"
+                  title="Layer help"
+                  aria-label="Layer help"
+                  :aria-expanded="open"
+                  @click.stop="toggle"
+                >
+                  <span class="icon is-small">
+                    <i
+                      class="fa-solid fa-circle-question"
+                      aria-hidden="true"
+                    ></i>
+                  </span>
+                </button>
+              </template>
 
-                <template #default>
-                  <p class="dialog-section-label">Layers</p>
-                  <p class="is-size-7 mb-2">
-                    Drag layers up or down to change their drawing order.
-                  </p>
-                  <p class="has-text-danger is-light is-size-7 mb-0">
-                    <strong class="has-text-danger">Warning:</strong> Custom
-                    layers are stored only in this browser and cannot be shared
-                    via URL.
-                  </p>
-                </template>
-              </PopupDialog>
-            </div>
-          </div>
-          <LayerPanel :model-info="modelInfo" />
+              <template #default>
+                <p class="dialog-section-label">Layers</p>
+                <p class="is-size-7 mb-2">
+                  Drag layers up or down to change their drawing order.
+                </p>
+                <p class="has-text-danger is-light is-size-7 mb-0">
+                  <strong class="has-text-danger">Warning:</strong> Custom
+                  layers are stored only in this browser and cannot be shared
+                  via URL.
+                </p>
+              </template>
+            </PopupDialog>
+          </template>
+          <LayerPanel :model-info="modelInfo" :grid-type="gridType" />
         </CollapsibleCard>
         <CollapsibleCard title="Actions">
           <ActionControls

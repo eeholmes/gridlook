@@ -1,9 +1,18 @@
+import "@/utils/disposablePolyfill.ts";
 import type { Grid } from "healpix-geo";
 
 import type { ProjectionHelper } from "@/lib/projection/projectionUtils.ts";
 import { buildHistogramSummary } from "@/utils/histogram.ts";
 
 export const HEALPIX_NUMCHUNKS = 12;
+
+/**
+ * Names to try for the cell-id coordinate: the one named by the dggs
+ * convention, otherwise "cell" and then "cell_ids" (the xdggs default).
+ */
+export function healpixCellCoordinateNames(coordinate?: string | null) {
+  return coordinate ? [coordinate] : ["cell", "cell_ids"];
+}
 
 function distanceSquared(
   x1: number,
@@ -52,43 +61,50 @@ function generateHealpixIndices(positionValues: Float32Array, steps: number) {
   return indices;
 }
 
+const FULL_FACE: THealpixDataRect = { u: 0, v: 0, width: 1, height: 1 };
+
+/**
+ * The texture is interpolated linearly between vertices, but the face-to-
+ * lat/lon mapping is curved: over a whole face (~110 km quads) that misplaces
+ * data by up to ~1 km. Meshing only the data rect shrinks that quadratically.
+ */
 export function buildHealpixGeometry(
   grid: Grid,
   ipix: bigint,
   steps: number,
-  helper: ProjectionHelper
+  helper: ProjectionHelper,
+  dataRect: THealpixDataRect = FULL_FACE
 ) {
+  const rect = dataRect.width > 0 ? dataRect : FULL_FACE;
   const vertexCount = steps * steps;
   const positionValues = new Float32Array(vertexCount * 3);
   const uv = new Float32Array(vertexCount * 2);
   const latLonValues = new Float32Array(vertexCount * 2);
   let vertexIndex = 0;
 
-  const coords = grid.vertices(BigInt(ipix), steps);
-  for (let index = 0; index < Math.floor(coords.length / 2); ++index) {
-    const indexLon = 2 * index;
-    const indexLat = 2 * index + 1;
-    const lat = coords[indexLat];
-    const lon = coords[indexLon];
+  for (let i = 0; i < steps; ++i) {
+    for (let j = 0; j < steps; ++j) {
+      // UVs stay face-global; the shader maps them into the data rect.
+      const u = rect.u + (rect.width * i) / (steps - 1);
+      const v = rect.v + (rect.height * j) / (steps - 1);
+      using coordinate = grid.vertex(ipix, u, v);
 
-    const u = Math.floor(index / steps) / (steps - 1);
-    const v = (index % steps) / (steps - 1);
+      const positionOffset = vertexIndex * 3;
+      helper.projectLatLonToArrays(
+        coordinate.lat,
+        coordinate.lon,
+        positionValues,
+        positionOffset,
+        latLonValues,
+        vertexIndex * 2
+      );
 
-    const positionOffset = vertexIndex * 3;
-    helper.projectLatLonToArrays(
-      lat,
-      lon,
-      positionValues,
-      positionOffset,
-      latLonValues,
-      vertexIndex * 2
-    );
+      const uvIndex = vertexIndex * 2;
+      uv[uvIndex] = u;
+      uv[uvIndex + 1] = v;
 
-    const uvIndex = vertexIndex * 2;
-    uv[uvIndex] = u;
-    uv[uvIndex + 1] = v;
-
-    vertexIndex++;
+      vertexIndex++;
+    }
   }
 
   const indices = generateHealpixIndices(positionValues, steps);
@@ -102,7 +118,8 @@ export function buildHealpixGeometry(
 
 // A face-local rectangle, normalized to [0, 1] across the whole face, that the
 // texture covers. Lets the shader map a full-face UV onto a texture that only
-// covers the (small) region a regional/sparse dataset actually has data for.
+// covers the (small) region a regional/sparse dataset, or the finite values of
+// a dense one, actually has data for.
 export type THealpixDataRect = {
   u: number;
   v: number;
@@ -151,22 +168,85 @@ export function getHealpixTextureIndex(pixel: number, nside: number) {
   return y * nside + x;
 }
 
-function buildDenseHealpixTexture(data: Float32Array, nside: number) {
-  const dataValues = new Float32Array(nside * nside);
+type TFaceBBox = { minX: number; minY: number; maxX: number; maxY: number };
+
+// First x in [from, to] (walking by `step`) of row y holding a finite value, or -1.
+function findFiniteX(
+  data: Float32Array,
+  spread: Uint32Array,
+  y: number,
+  from: number,
+  to: number,
+  step: 1 | -1
+) {
+  const rowBits = spread[y] * 2;
+  for (let x = from; x !== to + step; x += step) {
+    if (Number.isFinite(data[spread[x] + rowBits])) {
+      return x;
+    }
+  }
+  return -1;
+}
+
+// Face-local bounding box of the finite values of a dense face. Scans inwards
+// from the edges, so a face with values along its border costs O(nside).
+function getDenseFiniteBBox(
+  data: Float32Array,
+  spread: Uint32Array,
+  nside: number
+): TFaceBBox | null {
+  const last = nside - 1;
+  let minY = 0;
+  while (minY < nside && findFiniteX(data, spread, minY, 0, last, 1) < 0) {
+    minY++;
+  }
+  if (minY === nside) {
+    return null;
+  }
+  let maxY = last;
+  while (findFiniteX(data, spread, maxY, 0, last, 1) < 0) {
+    maxY--;
+  }
+  let minX = last;
+  let maxX = 0;
+  for (let y = minY; y <= maxY && (minX > 0 || maxX < last); y++) {
+    const left = minX > 0 ? findFiniteX(data, spread, y, 0, minX - 1, 1) : -1;
+    const right =
+      maxX < last ? findFiniteX(data, spread, y, last, maxX + 1, -1) : -1;
+    minX = left >= 0 ? left : minX;
+    maxX = right >= 0 ? right : maxX;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function buildDenseHealpixTexture(
+  data: Float32Array,
+  nside: number,
+  cropToData: boolean
+) {
   // Interleave each axis separately: O(nside) lookup storage instead of O(nside²).
   const spread = new Uint32Array(nside);
   for (let index = 1; index < nside; index++) {
     spread[index] = spread[index >> 1] * 4 + (index & 1);
   }
+  const fullFace = { minX: 0, minY: 0, maxX: nside - 1, maxY: nside - 1 };
+  const bbox =
+    (cropToData && getDenseFiniteBBox(data, spread, nside)) || fullFace;
+  const width = bbox.maxX - bbox.minX + 1;
+  const height = bbox.maxY - bbox.minY + 1;
+  const dataValues = new Float32Array(width * height);
   let min = Number.POSITIVE_INFINITY;
   let max = Number.NEGATIVE_INFINITY;
-  for (let index = 0; index < dataValues.length; index++) {
-    const pixel = spread[index % nside] + spread[Math.floor(index / nside)] * 2;
-    const value = data[pixel];
-    dataValues[index] = value;
-    if (Number.isFinite(value)) {
-      min = Math.min(min, value);
-      max = Math.max(max, value);
+  let index = 0;
+  for (let y = bbox.minY; y <= bbox.maxY; y++) {
+    const rowBits = spread[y] * 2;
+    for (let x = bbox.minX; x <= bbox.maxX; x++) {
+      const value = data[spread[x] + rowBits];
+      dataValues[index++] = value;
+      if (Number.isFinite(value)) {
+        min = Math.min(min, value);
+        max = Math.max(max, value);
+      }
     }
   }
   if (min === Number.POSITIVE_INFINITY) {
@@ -174,9 +254,14 @@ function buildDenseHealpixTexture(data: Float32Array, nside: number) {
   }
   return {
     dataValues,
-    width: nside,
-    height: nside,
-    dataRect: { u: 0, v: 0, width: 1, height: 1 } as THealpixDataRect,
+    width,
+    height,
+    dataRect: {
+      u: bbox.minX / nside,
+      v: bbox.minY / nside,
+      width: width / nside,
+      height: height / nside,
+    } as THealpixDataRect,
     histogramSummary: buildHistogramSummary(dataValues, min, max),
   };
 }
@@ -295,15 +380,22 @@ function buildSparseHealpixTexture(
   };
 }
 
+/**
+ * With `cropDenseToData`, a dense face is cropped to the bounding box of its
+ * finite values, like a sparse face to its cells. Only use it when the mesh is
+ * built from the returned dataRect: a texture swapped onto an existing mesh
+ * must keep the whole face.
+ */
 export function buildHealpixTexture(
   data: Float32Array,
   batchIndex: number,
   nside: number,
-  cells?: number[]
+  cells?: number[],
+  { cropDenseToData = false } = {}
 ) {
   return cells
     ? buildSparseHealpixTexture(data, batchIndex, nside, cells)
-    : buildDenseHealpixTexture(data, nside);
+    : buildDenseHealpixTexture(data, nside, cropDenseToData);
 }
 
 export function getHealpixFaceRange(

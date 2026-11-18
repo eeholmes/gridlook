@@ -1,5 +1,78 @@
 # Changelog
 
+## [1.8.1](https://github.com/d70-t/gridlook/compare/v1.8.0...v1.8.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* move jupyter publish workflow into release.yml ([02ad7c2](https://github.com/d70-t/gridlook/commit/02ad7c291907cad2fec47ff1621b5ece730a8b65))
+
+## [1.8.0](https://github.com/d70-t/gridlook/compare/v1.7.0...v1.8.0) (2026-10-28)
+
+
+### Features
+
+* add gridlook-jupyter, a jupyter-server extension with an Open with Gridlook Lab plugin ([f916e68](https://github.com/d70-t/gridlook/commit/f916e6840bd84bd3c3fe08de2bcff7f2a0789b79))
+* **lib:** open Kerchunk reference files ([36ebc77](https://github.com/d70-t/gridlook/commit/36ebc77ba8bbe3ec7c8c65eed065fd65a37dba4c))
+
+
+### Bug Fixes
+
+* **lib:** Delaunay Azimuthal creates less glitches ([2d82b32](https://github.com/d70-t/gridlook/commit/2d82b3240d9cfb5276b8ccfe679afba9e69d3670))
+* **lib:** Fixed seam-issue for certain km-scale datasets ([8c4119c](https://github.com/d70-t/gridlook/commit/8c4119c00dc4df583d07eb9be0bced13bd80cf50))
+* optimize curvilinear rendering with reusable texture-backed meshes and cached hover indexes ([5973ccb](https://github.com/d70-t/gridlook/commit/5973ccb1e3b6e7ee4a85938ebd3450918e1a8685))
+* Show error when no Variable is visualizable instead of endless loading ([a1045c4](https://github.com/d70-t/gridlook/commit/a1045c434147328650f6fb422c9719fcc83276bb))
+* **ui:** stop v-word-break from parsing dataset text as HTML ([38cacb8](https://github.com/d70-t/gridlook/commit/38cacb86c6d20000187625daeaa588b49d87d402))
+
+## [1.7.0](https://github.com/d70-t/gridlook/compare/v1.6.1...v1.7.0) (2026-10-21)
+
+
+### Features
+
+### Features
+
+* Added Basemaps (Versatiles and OpenStreetMaps) to replace old Land/Sea-Masks ([6370a99](https://github.com/d70-t/gridlook/commit/6370a990140b7dc9b8461e251cbd5781ce5bb50c))
+* **lib:** opacity-slider for the data layer ([4f83341](https://github.com/d70-t/gridlook/commit/4f83341946eb1661deaf62961ed2258e4e1d8721))
+* **ui:** convenience features for data input and catalogs  ([044220e](https://github.com/d70-t/gridlook/commit/044220e1acd68026c56d4d327dac4a9daa35791b)) (#239)
+* **ui:** split "Data Information"-Panel into two tabs for a better overview ([b33fe04](https://github.com/d70-t/gridlook/commit/b33fe0435c838d6e3895165216e61abfb8cd7765))
+
+
+### Bug Fixes
+
+* **lib:** fixed several visualization issues concerning the `as image layer`-Functionality ([3fede4e](https://github.com/d70-t/gridlook/commit/3fede4ea480b8e8f14a6eedd4282b7f911948e9a))
+* **lib:** URL has all layer options now ([016a364](https://github.com/d70-t/gridlook/commit/016a3646e7085234eb453002a504f752489e6f62)) (#218)
+* Snapshots no longer appear too bright ([9cdc927](https://github.com/d70-t/gridlook/commit/9cdc927b222b9bfe16577254c9323fb0b126e001))
+* **ui:** Info-panel does not refresh anymore when only dimension has been updated ([8060d75](https://github.com/d70-t/gridlook/commit/8060d753bc7051d81a957518e39ce04ea23638e4))
+
+## [1.6.1](https://github.com/d70-t/gridlook/compare/v1.6.0...v1.6.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* **lib:** fixed `Object is not disposable.` for Volume rendering on Safari Browsers ([4b028b5](https://github.com/d70-t/gridlook/commit/4b028b587655dc9a872f0b52d6ba34a2e40fc168))
+
+## [1.6.0](https://github.com/d70-t/gridlook/compare/v1.5.0...v1.6.0) (2026-09-18)
+
+
+### Features
+
+* added distance scale ([605689b](https://github.com/d70-t/gridlook/commit/605689b070ead8de0f7a865c9062a26cf9446fed)) (#8)
+* volume rendering as a layer ([a8e2241](https://github.com/d70-t/gridlook/commit/a8e2241580668969cef9e822da147871a7b7424d))
+* local zarr support ([eccbc49](https://github.com/d70-t/gridlook/commit/eccbc4924bf5c2c83e26e2c9dd42253a0dd484e5)) (#219)
+* Play button for other dimensions than time ([31e42cc](https://github.com/d70-t/gridlook/commit/31e42ccf0d16d62e3542ae8cd5f5a9875adb16ab))
+* support multidimensional streamline fields ([8c9d364](https://github.com/d70-t/gridlook/commit/8c9d36485480d4297bc332d069c891f4e1e7cf2a)) (#202)
+* UGRID support ([3b4d197](https://github.com/d70-t/gridlook/commit/3b4d19788f553c6ea4a469e65d697621fc038cb1)) (#170)
+* **lib:** recognize volume axes from coordinate metadata ([39e7566](https://github.com/d70-t/gridlook/commit/39e7566656edc712f08b0c37b0e1a35bc3f77f80))
+
+### Bug Fixes
+
+* camera zoom gets closer to the surface now ([4b0c5ac](https://github.com/d70-t/gridlook/commit/4b0c5acda6de4e9fdcd723bf82fbba8eb3f267ef))
+* fixed wrong decoding of float time values ([bf31527](https://github.com/d70-t/gridlook/commit/bf31527481065d2dafbd530cf8b275a35f5bc2de)) (#209)
+* healpix level 13 works with chrome now ([62db9b6](https://github.com/d70-t/gridlook/commit/62db9b61c1c0eb4f4640a8b4edb695e54ce25f4a)) (#197)
+* **lib:** fix error message and name the codec when a dataset cannot be decoded ([b0244c5](https://github.com/d70-t/gridlook/commit/b0244c5b2b6520695311629bb21379663e74228b))
+* **ui:** Layer and Colormap-Selects have readable texts in dark mode again ([4df68c5](https://github.com/d70-t/gridlook/commit/4df68c5aed0dc0d17caffddd036d3917fe27173a))
+* zoom-level in URL gets updated on closest position again ([a79dc82](https://github.com/d70-t/gridlook/commit/a79dc82ddca94f39fd3a6209c25427b6c3951eb5))
+
 ## [1.5.0](https://github.com/d70-t/gridlook/compare/v1.4.1...v1.5.0) (2026-09-09)
 
 

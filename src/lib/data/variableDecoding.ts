@@ -1,5 +1,7 @@
 import * as zarr from "zarrita";
 
+import type { TBounds, TDataSource } from "../types/GlobeTypes.ts";
+
 import {
   applyValueTransformInPlace,
   getActiveValueTransform,
@@ -14,14 +16,20 @@ export type TDataBounds = {
   missingValue: number;
 };
 
+// `null` (e.g. xarray's `_FillValue: None`) means "not set". Number(null)
+// would turn it into 0 and mask every exact zero, such as longitude 0.
+function hasNonNullAttribute(attributes: zarr.Attributes, key: string) {
+  return Object.hasOwn(attributes, key) && attributes[key] !== null;
+}
+
 export function getMissingValue(
   datavar: zarr.Array<zarr.DataType, zarr.AsyncReadable>
 ) {
   const attributes = datavar.attrs;
-  if (Object.hasOwn(attributes, "missingValue")) {
+  if (hasNonNullAttribute(attributes, "missingValue")) {
     return new Float32Array([Number(attributes.missingValue)])[0];
   }
-  if (Object.hasOwn(attributes, "missing_value")) {
+  if (hasNonNullAttribute(attributes, "missing_value")) {
     return new Float32Array([Number(attributes.missing_value)])[0];
   }
   return NaN;
@@ -40,17 +48,22 @@ export function getFillValue(
     return datavar.fillValue as number;
   }
   const attributes = datavar.attrs;
-  if (Object.hasOwn(attributes, "fillValue")) {
+  if (hasNonNullAttribute(attributes, "fillValue")) {
     return new Float32Array([Number(attributes.fillValue)])[0];
   }
-  if (Object.hasOwn(attributes, "fill_value")) {
+  if (hasNonNullAttribute(attributes, "fill_value")) {
     return new Float32Array([Number(attributes.fill_value)])[0];
   }
-  if (Object.hasOwn(attributes, "_FillValue")) {
+  if (hasNonNullAttribute(attributes, "_FillValue")) {
     return new Float32Array([Number(attributes._FillValue)])[0];
   }
-  if (Object.hasOwn(attributes, "_fillvalue")) {
+  if (hasNonNullAttribute(attributes, "_fillvalue")) {
     return new Float32Array([Number(attributes._fillvalue)])[0];
+  }
+  // A fill value of 0 is falsy, so it is only taken once no attribute
+  // names another fill value.
+  if (datavar.fillValue === 0) {
+    return 0;
   }
   return NaN;
 }
@@ -64,6 +77,58 @@ function getAttributeNumber(
     return Number(attributes[key]);
   }
   return fallback;
+}
+
+function getAttributePair(
+  attributes: zarr.Attributes,
+  key: string
+): [number, number] | undefined {
+  const value = attributes[key];
+  if (!Array.isArray(value) && !ArrayBuffer.isView(value)) {
+    return undefined;
+  }
+  const pair = Array.from(value as ArrayLike<unknown>, Number);
+  return pair.length === 2 ? [pair[0], pair[1]] : undefined;
+}
+
+function toBounds(
+  low: number,
+  high: number
+): { low: number; high: number } | undefined {
+  if (!Number.isFinite(low) || !Number.isFinite(high) || low === high) {
+    return undefined;
+  }
+  return { low: Math.min(low, high), high: Math.max(low, high) };
+}
+
+/**
+ * Colour range a variable's CF `actual_range` suggests. CF gives it in
+ * unpacked units, so it is used as is. `valid_range` / `valid_min` and
+ * `valid_max` are not used: they often hold the limits of the dtype rather
+ * than a range worth looking at.
+ */
+export function getDefaultRangeFromAttributes(
+  attributes?: zarr.Attributes
+): { low: number; high: number } | undefined {
+  if (!attributes) {
+    return undefined;
+  }
+  const actualRange = getAttributePair(attributes, "actual_range");
+  return actualRange ? toBounds(...actualRange) : undefined;
+}
+
+/**
+ * Initial colour range of a variable: `default_range` from a JSON index, else
+ * its CF `actual_range`. Read where the range is used, so it
+ * works however the index was built (one level or several).
+ */
+export function getDefaultRange(
+  datasource?: Pick<TDataSource, "default_range" | "attrs">
+): TBounds | undefined {
+  return (
+    datasource?.default_range ??
+    getDefaultRangeFromAttributes(datasource?.attrs)
+  );
 }
 
 function getValidRanges(attributes?: zarr.Attributes): [number, number][] {
@@ -180,6 +245,9 @@ export function decodeVariableDataAndGetBounds(
 export function castDataVarToFloat32(rawData: zarr.TypedArray<zarr.DataType>) {
   if (rawData instanceof Float32Array) {
     return rawData;
+  }
+  if (rawData instanceof BigInt64Array || rawData instanceof BigUint64Array) {
+    return Float32Array.from(rawData, Number);
   }
   return Float32Array.from(rawData as ArrayLike<number>);
 }

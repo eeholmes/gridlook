@@ -2,6 +2,7 @@
 import { ref, watch } from "vue";
 
 import queryVariable, { type TNercVariable } from "@/lib/data/variableQuery.ts";
+import type { TVarInfo } from "@/lib/types/GlobeTypes.ts";
 import CollapsibleText from "@/ui/common/CollapsibleText.vue";
 
 const props = defineProps<{
@@ -9,6 +10,7 @@ const props = defineProps<{
   variableLongName: string | null;
   variableStandardName: string | null;
   variableUnits: string | null;
+  derivedFrom?: TVarInfo["derivedFrom"];
 }>();
 
 const nercInfo = ref<TNercVariable | null>(null);
@@ -37,10 +39,18 @@ watch(
     <h4
       class="title is-6 is-flex is-justify-content-space-between is-align-items-center"
     >
-      <span>Current Variable</span>
+      <span style="text-wrap: nowrap">Current Variable</span>
       <code>{{ varname }}</code>
     </h4>
     <div class="content">
+      <p v-if="derivedFrom" class="is-size-7">
+        <span class="tag is-info is-light mr-1">Derived</span>
+        The strength of the horizontal vector field shown by the streamlines,
+        calculated as <code>√(u² + v²)</code> from
+        <code>{{ derivedFrom.u }}</code> (u) and
+        <code>{{ derivedFrom.v }}</code> (v). It is computed in GridLook and is
+        not stored in the dataset.
+      </p>
       <table class="table is-narrow is-fullwidth is-size-7">
         <tbody>
           <tr>

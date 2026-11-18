@@ -8,13 +8,24 @@ import {
 } from "../types/GlobeTypes.ts";
 
 import {
+  isLatitudeVariable,
+  isLongitudeVariable,
+} from "./coordinateVariables.ts";
+import {
   createListableIcechunkStore,
   isIcechunkStorePath,
   splitIcechunkStoreAndGroup,
 } from "./icechunkStore.ts";
+import type { NetCDFArray } from "./netCDF.ts";
+import {
+  createReferenceStore,
+  isReferenceStorePath,
+  splitReferenceStoreAndGroup,
+} from "./referenceStore.ts";
 import { ZarrDataManager } from "./ZarrDataManager.ts";
 
 import trim from "@/utils/trim.ts";
+import { joinUrlPath } from "@/utils/xsrfToken.ts";
 
 /*
   Matches strings like "a: foo b: bar" and rewrites them into a map {a: foo, b: bar}
@@ -77,8 +88,7 @@ export function hideFormulaTermVariablesWithoutStandardName(
 
 function isValidVariable(
   varname: string,
-  shape: number[],
-  dimensions?: string[]
+  variable: zarr.Array<zarr.DataType, zarr.AsyncReadable> | NetCDFArray
 ) {
   const EXCLUDED_VAR_PATTERNS = [
     "bnds",
@@ -89,7 +99,14 @@ function isValidVariable(
     "cell_ids",
   ] as const;
 
+  const shape = variable.shape;
+  const dimensions = variable.dimensionNames as string[] | undefined;
+
   if (!Array.isArray(dimensions)) {
+    return false;
+  }
+
+  if (variable.dtype === "string") {
     return false;
   }
 
@@ -99,7 +116,9 @@ function isValidVariable(
   const hasExcludedName = EXCLUDED_VAR_PATTERNS.some((pattern) =>
     varname.includes(pattern)
   );
-  const isLatLon = varname === "lat" || varname === "lon";
+  const isLatLon =
+    isLatitudeVariable(varname, variable.attrs) ||
+    isLongitudeVariable(varname, variable.attrs);
 
   return shapeValid && !hasExcludedName && !isLatLon;
 }
@@ -197,11 +216,7 @@ async function collectVariable(
     [varname]: {
       store: src,
       dataset: datasetPath,
-      hidden: !isValidVariable(
-        varname,
-        variable.shape,
-        variable.dimensionNames as string[]
-      ),
+      hidden: !isValidVariable(varname, variable),
       attrs: {
         ...variable.attrs,
         dimensionNames: variable.dimensionNames,
@@ -277,13 +292,16 @@ async function processZarrVariables(
 }
 
 function createIndex(
-  title: string,
+  groupAttrs: zarr.Attributes,
   datasources: Record<string, TDataSource>,
   src: string,
   zarrFormat: TZarrFormat,
   datasetPath = "",
   file?: File
 ): TSources {
+  for (const source of Object.values(datasources)) {
+    source.groupAttrs = groupAttrs;
+  }
   hideFormulaTermVariablesWithoutStandardName(datasources);
   const datasetSource = {
     store: src,
@@ -291,7 +309,7 @@ function createIndex(
     ...(file ? { file } : {}),
   };
   return {
-    name: title,
+    name: groupAttrs.title as string,
     zarr_format: zarrFormat, // eslint-disable-line camelcase
     levels: [
       {
@@ -320,13 +338,14 @@ function registerNetCDFBackend(netCDF: TNetCDFModule) {
 }
 
 export async function indexFromNetCDF(
-  file: File,
+  source: File | string,
   src: string
 ): Promise<TSources> {
+  const file = typeof source === "string" ? undefined : source;
   const netCDF = await import("./netCDF.ts");
   registerNetCDFBackend(netCDF);
   const { listNetCDFArrays } = netCDF;
-  const arrays = await listNetCDFArrays(file, src);
+  const arrays = await listNetCDFArrays(source, src);
   const dimensions = new Set<string>();
   for (const array of arrays) {
     const varname = array.path.replace(/^\/+/, "");
@@ -343,10 +362,8 @@ export async function indexFromNetCDF(
     datasources[varname] = {
       store: src,
       dataset: "",
-      file,
-      hidden:
-        dimensions.has(varname) ||
-        !isValidVariable(varname, array.shape, array.dimensionNames),
+      ...(file ? { file } : {}),
+      hidden: dimensions.has(varname) || !isValidVariable(varname, array),
       attrs: {
         ...array.attrs,
         dimensionNames: array.dimensionNames,
@@ -359,10 +376,10 @@ export async function indexFromNetCDF(
   const root = await ZarrDataManager.getDatasetGroup({
     store: src,
     dataset: "",
-    file,
+    ...(file ? { file } : {}),
   });
   return createIndex(
-    String(root.attrs.title ?? file.name),
+    { ...root.attrs, title: String(root.attrs.title ?? file?.name ?? src) },
     datasources,
     src,
     ZARR_FORMAT.NETCDF,
@@ -385,7 +402,7 @@ async function indexFromIcechunk(src: string): Promise<TSources> {
     groupPath
   );
   return createIndex(
-    group.attrs?.title as string,
+    group.attrs,
     datasources,
     storePath,
     ZARR_FORMAT.ICECHUNK,
@@ -393,37 +410,58 @@ async function indexFromIcechunk(src: string): Promise<TSources> {
   );
 }
 
-export async function indexFromZarr(src: string): Promise<TSources> {
-  if (isIcechunkStorePath(src)) {
+async function indexFromReference(src: string): Promise<TSources> {
+  const { storePath, groupPath } = splitReferenceStoreAndGroup(src);
+  const store = await createReferenceStore(storePath);
+  const format = store.zarrFormat === 2 ? ZARR_FORMAT.V2 : ZARR_FORMAT.V3;
+  const root = await zarr.open(store, { kind: "group" });
+  const group = groupPath
+    ? await zarr.open(root.resolve(groupPath), { kind: "group" })
+    : root;
+  const datasources = await processZarrVariables(
+    store,
+    root,
+    storePath,
+    groupPath
+  );
+  return createIndex(group.attrs, datasources, storePath, format, groupPath);
+}
+
+async function indexFromConsolidatedZarr(
+  src: string,
+  format: typeof ZARR_FORMAT.V2 | typeof ZARR_FORMAT.V3
+): Promise<TSources> {
+  const store = await zarr.withConsolidatedMetadata(
+    await ZarrDataManager.createNewStore(src),
+    { format: format === ZARR_FORMAT.V2 ? "v2" : "v3" }
+  );
+  const root = await zarr.open(store, { kind: "group" });
+  const datasources = await processZarrVariables(store, root, src);
+  return createIndex(root.attrs, datasources, src, format);
+}
+
+/** Without a `format`, the store is probed for Zarr v2, Zarr v3 and Icechunk. */
+export async function indexFromZarr(
+  src: string,
+  format?: TZarrFormat
+): Promise<TSources> {
+  if (isReferenceStorePath(src)) {
+    return indexFromReference(src);
+  }
+  if (
+    format === ZARR_FORMAT.ICECHUNK ||
+    (format === undefined && isIcechunkStorePath(src))
+  ) {
     return indexFromIcechunk(src);
   }
+  if (format === ZARR_FORMAT.V2 || format === ZARR_FORMAT.V3) {
+    return indexFromConsolidatedZarr(src, format);
+  }
   try {
-    const store = await zarr.withConsolidatedMetadata(
-      await ZarrDataManager.createNewStore(src),
-      { format: "v2" }
-    );
-    const root = await zarr.open(store, { kind: "group" });
-    const datasources = await processZarrVariables(store, root, src);
-    return createIndex(
-      root.attrs?.title as string,
-      datasources,
-      src,
-      ZARR_FORMAT.V2
-    );
+    return await indexFromConsolidatedZarr(src, ZARR_FORMAT.V2);
   } catch {
     try {
-      const store = await zarr.withConsolidatedMetadata(
-        await ZarrDataManager.createNewStore(src),
-        { format: "v3" }
-      );
-      const root = await zarr.open(store, { kind: "group" });
-      const datasources = await processZarrVariables(store, root, src);
-      return createIndex(
-        root.attrs?.title as string,
-        datasources,
-        src,
-        ZARR_FORMAT.V3
-      );
+      return await indexFromConsolidatedZarr(src, ZARR_FORMAT.V3);
     } catch {
       // Some icechunk datasets do not use `.icechunk` suffix, so we try to detect
       // and read them with the icechunk reader as a fallback before giving up and
@@ -444,7 +482,10 @@ function collectStores(
   const stores: Record<string, Set<string>> = {};
   for (const varname in datasources) {
     const variable = datasources[varname];
-    const store = trim(variable.store, "/") + "/" + trim(variable.dataset, "/");
+    const store = joinUrlPath(
+      trim(variable.store, "/"),
+      trim(variable.dataset, "/")
+    );
     if (!stores[store]) {
       stores[store] = new Set();
     }
@@ -470,6 +511,7 @@ async function enrichMetadata(
     const root = await zarr.open(zarrStore, { kind: "group" });
 
     for (const varname of vars) {
+      datasources[varname].groupAttrs = root.attrs;
       try {
         const variable = await zarr.open(root.resolve(`/${varname}`), {
           kind: "array",
@@ -489,7 +531,14 @@ async function enrichMetadata(
   }
 }
 
-export async function indexFromIndex(src: string): Promise<TSources> {
+/**
+ * `tokenize` is applied to every store the index names, so stores on the same
+ * Jupyter server get its `_xsrf` token too (see `withStoreXsrfToken`).
+ */
+export async function indexFromIndex(
+  src: string,
+  tokenize: (store: string) => string = (store) => store
+): Promise<TSources> {
   const res = await fetch(src);
   if (!res.ok) {
     throw new Error(`Failed to fetch index from ${src}: ${res.statusText}`);
@@ -497,6 +546,17 @@ export async function indexFromIndex(src: string): Promise<TSources> {
     throw new Error(`Index not found at ${src}`);
   }
   const sources = (await res.json()) as TSources;
+  for (const level of sources.levels) {
+    for (const source of [
+      level.grid,
+      level.time,
+      ...Object.values(level.datasources ?? {}),
+    ]) {
+      if (source?.store) {
+        source.store = tokenize(source.store);
+      }
+    }
+  }
   const datasources = sources.levels[0].datasources;
   const stores = collectStores(datasources);
   try {

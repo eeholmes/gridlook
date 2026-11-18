@@ -11,14 +11,26 @@ import {
   useGridHoverLookup,
   type TGridHoverLookupResult,
 } from "./composables/gridHoverUtils.ts";
-import { loadVectorComponents } from "./composables/streamlineData.ts";
 import { useGridDataLoader } from "./composables/useGridDataLoader.ts";
+import {
+  getRgbChannelReads,
+  useRgbLayer,
+  type TRgbBatch,
+  type TRgbChannelRead,
+  type TRgbRequest,
+} from "./composables/useRgbLayer.ts";
+import { useScalarFieldCache } from "./composables/useScalarFieldCache.ts";
 import { useSharedGridLogic } from "./composables/useSharedGridLogic.ts";
 import { useStreamlineLayer } from "./composables/useStreamlineLayer.ts";
+import { useVolume } from "./composables/useVolume.ts";
 
 import { buildDimensionRangesAndIndices } from "@/lib/data/dimensionHandling.ts";
+import { interleaveRgba, mergeRgbBounds } from "@/lib/data/rgbComposite.ts";
+import { loadVectorComponents } from "@/lib/data/streamlineData.ts";
+import { VALUE_TRANSFORMS } from "@/lib/data/valueTransform.ts";
 import {
   castDataVarToFloat32,
+  decodeVariableDataAndGetBounds,
   getFillValue,
   getMissingValue,
 } from "@/lib/data/variableDecoding.ts";
@@ -26,6 +38,10 @@ import {
   RegularVectorField,
   resolveVectorVariablePair,
 } from "@/lib/data/vectorField.ts";
+import {
+  createVectorMagnitudeData,
+  type TVectorMagnitudeData,
+} from "@/lib/data/vectorMagnitude.ts";
 import { ZarrDataManager } from "@/lib/data/ZarrDataManager.ts";
 import {
   getGridVariableData,
@@ -34,9 +50,11 @@ import {
 import {
   HEALPIX_NUMCHUNKS,
   buildHealpixRegionCoordinates,
+  buildHealpixTexture,
   decodeHealpixFaceXY,
   getHealpixFaceDataRect,
   getHealpixFaceRange,
+  healpixCellCoordinateNames,
   type THealpixDataRect,
 } from "@/lib/grids/healpixCalculations.ts";
 import {
@@ -56,6 +74,7 @@ import {
   makeGpuProjectedTextureMaterial,
 } from "@/lib/shaders/gridShaders.ts";
 import type { TDimensionRange, TSources } from "@/lib/types/GlobeTypes.ts";
+import { VOLUME_GRID_TYPES } from "@/lib/volume/volumeGrid.ts";
 import { useUrlParameterStore } from "@/store/paramStore.ts";
 import {
   HOVERED_GRID_POINT_STATUS,
@@ -96,6 +115,7 @@ const { paramDimIndices, paramDimMinBounds, paramDimMaxBounds } =
 
 const {
   getScene,
+  getRenderer,
   redraw,
   makeSnapshot,
   toggleRotate,
@@ -103,7 +123,6 @@ const {
   fitCameraToDataset,
   getDataVar,
   fetchDimensionDetails,
-  updateLandSeaMask,
   updateColormap,
   updateHistogram,
   projectionHelper,
@@ -132,7 +151,10 @@ type TStreamlineContext = {
 };
 
 let lastStreamlineContext: TStreamlineContext | undefined;
+let lastDatavar: zarr.Array<zarr.DataType, zarr.AsyncReadable> | undefined;
 let streamlineRequestRevision = 0;
+let cachedMagnitude: TVectorMagnitudeData | undefined;
+let cachedStreamlineKey: string | undefined;
 
 let disposed = false;
 
@@ -143,12 +165,39 @@ onColormapChange(() => updateColormap(mainMeshes));
 onProjectionChange(updateMeshProjectionUniforms);
 onMotionStateChange(updateMeshProjectionUniforms);
 
+const scalarCache = useScalarFieldCache({
+  updateHistogram,
+  updateColormap: () => updateColormap(mainMeshes),
+  redraw,
+});
+
 const streamlines = useStreamlineLayer({
   getScene,
   redraw,
   projectionHelper,
   onProjectionChange,
   registerAnimationCallback,
+});
+
+const rgbLayer = useRgbLayer({
+  getScene,
+  redraw,
+  projectionHelper,
+  isSceneInMotion,
+  onProjectionChange,
+  onMotionStateChange,
+  load: loadRgbComposite,
+});
+
+const volume = useVolume({
+  getDatasources: () => props.datasources,
+  getScene,
+  getRenderer,
+  redraw,
+  projectionHelper,
+  isSceneInMotion,
+  onProjectionChange,
+  onMotionStateChange,
 });
 
 /**
@@ -167,16 +216,18 @@ const { datasourceUpdate } = useGridDataLoader({
   getDatasources: () => props.datasources,
   getDataVar,
   fetchAndRenderData,
+  scalarCache,
   clearHoverLookup,
-  updateLandSeaMask,
   updateColormap: () => updateColormap(mainMeshes),
   refreshStreamlines: async (reuseCached) => {
-    if (reuseCached && streamlines.showCached()) {
-      return;
-    }
     if (lastStreamlineContext) {
-      await updateStreamlines(lastStreamlineContext);
+      await updateStreamlines(lastStreamlineContext, reuseCached);
     }
+  },
+  suspendStreamlines: () => {
+    streamlineRequestRevision++;
+    store.streamlineLoading = false;
+    store.streamlineProgress = undefined;
   },
 });
 
@@ -310,30 +361,26 @@ function unpackGrid(): healpixGeo.Grid {
 }
 
 async function getCells() {
-  let cellCoord = "cell";
   const dggsMetadata = await ZarrDataManager.getDggsMetadata(
     props.datasources!,
     varnameSelector.value
   );
-  if (dggsMetadata !== null) {
-    const coordinate = dggsMetadata["coordinate"];
-    if (coordinate) {
-      cellCoord = coordinate;
+
+  for (const cellCoord of healpixCellCoordinateNames(
+    dggsMetadata?.["coordinate"]
+  )) {
+    try {
+      const rawCells = await fetchHealpixVariableData(
+        [],
+        ZarrDataManager.resolveVariablePath(varnameSelector.value, cellCoord)
+      );
+
+      return Array.from(rawCells, (cell) => Number(cell));
+    } catch {
+      // no such coordinate, try the next name
     }
-  } else {
-    // no dggs metadata found, continue with the default cell coordinate
   }
-
-  try {
-    const rawCells = await fetchHealpixVariableData(
-      [],
-      ZarrDataManager.resolveVariablePath(varnameSelector.value, cellCoord)
-    );
-
-    return Array.from(rawCells, (cell) => Number(cell));
-  } catch {
-    return undefined;
-  }
+  return undefined;
 }
 
 function fetchHealpixVariableData(
@@ -393,6 +440,33 @@ function fitCameraToCells(grid: healpixGeo.Grid, cells: number[] | undefined) {
   }
   // Cell coordinates describe the entire cutout before any face data is loaded.
   fitCameraToDataset(regions);
+}
+
+async function showMagnitude(scalar: TVectorMagnitudeData) {
+  const context = lastStreamlineContext;
+  if (!context) {
+    return;
+  }
+  await scalarCache.showMagnitude(scalar, () => {
+    const { grid, cellCoord } = context;
+    const textures: THealpixTexture[] = [];
+    for (let faceIndex = 0; faceIndex < HEALPIX_NUMCHUNKS; faceIndex++) {
+      const range = getHealpixFaceRange(faceIndex, grid.nside, cellCoord);
+      if (range.start === range.end) {
+        continue;
+      }
+      textures.push({
+        batchIndex: faceIndex,
+        ...buildHealpixTexture(
+          scalar.data.subarray(range.start, range.end),
+          faceIndex,
+          grid.nside,
+          range.cells
+        ),
+      });
+    }
+    return () => textures.forEach(updateHealpixTexture);
+  });
 }
 
 async function prepareDimensionData(
@@ -471,7 +545,10 @@ function makeHealpixVectorField(
 }
 
 // eslint-disable-next-line max-lines-per-function
-async function updateStreamlines(context: TStreamlineContext) {
+async function updateStreamlines(
+  context: TStreamlineContext,
+  reuseCached = false
+) {
   const requestRevision = ++streamlineRequestRevision;
   const variableNames = Object.keys(
     props.datasources?.levels[0]?.datasources ?? {}
@@ -479,18 +556,53 @@ async function updateStreamlines(context: TStreamlineContext) {
   const pair = resolveVectorVariablePair(
     variableNames,
     varnameSelector.value,
-    store.streamlineSelection
+    store.streamlineSelection,
+    store.isStreamlineLayerEnabled() ? store.streamlinePair : undefined
   );
   if (!pair || !props.datasources) {
+    cachedMagnitude = undefined;
+    cachedStreamlineKey = undefined;
+    store.setStreamlineMagnitudeInfo(undefined);
     streamlines.clear();
     return;
   }
-  if (!store.isStreamlineLayerEnabled()) {
-    streamlines.setAvailablePair(pair);
+  const requestKey = JSON.stringify({
+    indices: context.indices,
+    nside: context.grid.nside,
+    cells: context.cellCoord
+      ? [
+          context.cellCoord.length,
+          context.cellCoord[0],
+          context.cellCoord.at(-1),
+        ]
+      : undefined,
+    pair: [pair.u, pair.v],
+    level: store.streamlineLevelIndex,
+  });
+  if (
+    reuseCached &&
+    requestKey === cachedStreamlineKey &&
+    streamlines.showCached()
+  ) {
+    if (store.streamlineMagnitudeDisplayed && cachedMagnitude) {
+      await showMagnitude(cachedMagnitude);
+    }
     return;
   }
   const nside = context.grid.nside;
 
+  if (!store.isStreamlineLayerEnabled()) {
+    if (requestKey === cachedStreamlineKey) {
+      store.setStreamlinePair(pair);
+    } else {
+      cachedMagnitude = undefined;
+      cachedStreamlineKey = undefined;
+      store.setStreamlineMagnitudeInfo(undefined);
+      streamlines.setAvailablePair(pair);
+    }
+    return;
+  }
+  streamlines.startLoading();
   try {
     const expectedDataLength = context.cellCoord?.length ?? 12 * nside * nside;
     const components = await loadVectorComponents({
@@ -501,23 +613,59 @@ async function updateStreamlines(context: TStreamlineContext) {
       currentIndices: context.indices,
       spatialDimensionNames: [selectedDimensionNames.value.at(-1)!],
       expectedDataLength,
+      selectedLevelIndex: store.streamlineLevelIndex,
     });
     if (requestRevision !== streamlineRequestRevision) {
       return;
     }
-    if (!components) {
-      streamlines.clear();
+    store.setStreamlineLevelInfo(components?.levelInfo);
+    store.setStreamlineMagnitudeInfo(
+      components?.magnitudeInfo,
+      components?.canDeriveMagnitude
+    );
+    if (!components || components.incompatibility !== undefined) {
+      cachedMagnitude = undefined;
+      cachedStreamlineKey = undefined;
+      streamlines.clear(components?.incompatibility);
       return;
     }
-    streamlines.setField(
+    if (
+      !(await streamlines.prepareField(
+        () => requestRevision === streamlineRequestRevision
+      ))
+    ) {
+      return;
+    }
+    const magnitude =
+      components.magnitudeInfo && components.canDeriveMagnitude
+        ? createVectorMagnitudeData(
+            components.uData,
+            components.vData,
+            components.magnitudeInfo
+          )
+        : undefined;
+    const rendered = await streamlines.setField(
       makeHealpixVectorField(
         context.grid,
         context.cellCoord,
         components.uData,
         components.vData
       ),
-      pair
+      pair,
+      () => requestRevision === streamlineRequestRevision,
+      async () => {
+        if (store.streamlineMagnitudeDisplayed && magnitude) {
+          await showMagnitude(magnitude);
+        } else {
+          await scalarCache.restoreScalar();
+        }
+      }
     );
+    if (!rendered || requestRevision !== streamlineRequestRevision) {
+      return;
+    }
+    cachedMagnitude = magnitude;
+    cachedStreamlineKey = requestKey;
   } catch (error) {
     if (requestRevision === streamlineRequestRevision) {
       streamlines.clear();
@@ -595,8 +743,23 @@ function updateHealpixBatch(batch: THealpixBatch) {
     mesh.geometry.dispose();
     setupProjectionGeometryWrap(geometry);
     mesh.geometry = geometry;
+    rgbLayer.updateGeometry(batch.batchIndex, geometry);
   } else {
     mesh = createHealpixMesh(batch.batchIndex, geometry);
+  }
+  updateHealpixTexture(batch);
+  updateMeshProjectionUniforms();
+}
+
+type THealpixTexture = Pick<
+  THealpixBatch,
+  "batchIndex" | "dataValues" | "width" | "height" | "dataRect"
+>;
+
+function updateHealpixTexture(batch: THealpixTexture) {
+  const mesh = mainMeshes[batch.batchIndex];
+  if (!mesh) {
+    return;
   }
   mesh.userData.dataRect = batch.dataRect;
   const material = mesh.material as THREE.ShaderMaterial;
@@ -620,7 +783,6 @@ function updateHealpixBatch(batch: THealpixBatch) {
   // regional/sparse dataset); a full face has nothing to discard around.
   material.uniforms.clipToDataRect.value =
     batch.dataRect.width < 1 || batch.dataRect.height < 1 ? 1 : 0;
-  updateMeshProjectionUniforms();
 }
 
 // eslint-disable-next-line max-lines-per-function
@@ -628,11 +790,15 @@ async function processHealpixChunks(
   datavar: zarr.Array<zarr.DataType, zarr.AsyncReadable>,
   cells: number[] | undefined,
   grid: healpixGeo.Grid,
-  indices: (number | zarr.Slice | null)[]
+  indices: (number | zarr.Slice | null)[],
+  deferDisplay: boolean,
+  isCurrent: () => boolean
 ) {
   let dataMin = Number.POSITIVE_INFINITY;
   let dataMax = Number.NEGATIVE_INFINITY;
   const histogramSummaries: THistogramSummary[] = [];
+  const textures: THealpixTexture[] = [];
+  const batches: THealpixBatch[] = [];
   const helper = projectionHelper.value;
   const options = {
     grid: {
@@ -653,10 +819,12 @@ async function processHealpixChunks(
     projectionType: helper.type,
     projectionCenter: { lat: helper.center.lat, lon: helper.center.lon },
   };
-  clearHoverLookup();
-  // Read, transfer and render one face before fetching the next (256 MiB at level 13).
+  if (!deferDisplay) {
+    clearHoverLookup();
+  }
+  // Read one face at a time; with streamlines, stage the complete replacement.
   for (let faceIndex = 0; faceIndex < HEALPIX_NUMCHUNKS; faceIndex++) {
-    if (disposed) {
+    if (disposed || !isCurrent()) {
       return;
     }
     const range = getHealpixFaceRange(faceIndex, grid.nside, cells);
@@ -666,7 +834,7 @@ async function processHealpixChunks(
       range.start === range.end
         ? new Float32Array()
         : castDataVarToFloat32(await fetchHealpixVariableData(selection));
-    if (disposed) {
+    if (disposed || !isCurrent()) {
       return;
     }
     const batch = await buildHealpixFace({
@@ -679,9 +847,101 @@ async function processHealpixChunks(
     histogramSummaries.push(summary);
     dataMin = dataMin > summary.min ? summary.min : dataMin;
     dataMax = dataMax < summary.max ? summary.max : dataMax;
-    updateHealpixBatch(batch);
+    textures.push({
+      batchIndex: batch.batchIndex,
+      dataValues: batch.dataValues,
+      width: batch.width,
+      height: batch.height,
+      dataRect: batch.dataRect,
+    });
+    if (!isCurrent()) {
+      return;
+    }
+    if (deferDisplay) {
+      batches.push(batch);
+    } else {
+      updateHealpixBatch(batch);
+    }
   }
-  return { dataMin, dataMax, histogramSummaries };
+  return { dataMin, dataMax, histogramSummaries, textures, batches };
+}
+
+// Reads the three channels face by face and draws them over the faces of the
+// data grid, which are already meshed for the current selection.
+async function loadRgbComposite(request: TRgbRequest) {
+  const context = lastStreamlineContext;
+  const datavar = lastDatavar;
+  if (!context || !datavar) {
+    return undefined;
+  }
+  const { grid, cellCoord } = context;
+  const reads = await getRgbChannelReads(request, datavar, openRgbVariable);
+  const batches: TRgbBatch[] = [];
+  const bounds: { min: number; max: number }[] = [];
+  for (let faceIndex = 0; faceIndex < HEALPIX_NUMCHUNKS; faceIndex++) {
+    const mesh = mainMeshes[faceIndex];
+    const range = getHealpixFaceRange(faceIndex, grid.nside, cellCoord);
+    if (!mesh || range.start === range.end) {
+      continue;
+    }
+    const textures = await Promise.all(
+      reads.map(async (read) => {
+        const data = await readRgbFaceChannel(read, range);
+        bounds.push(data.bounds);
+        return buildHealpixTexture(
+          data.values,
+          faceIndex,
+          grid.nside,
+          range.cells
+        );
+      })
+    );
+    if (disposed || !request.isCurrent()) {
+      return undefined;
+    }
+    const [red, green, blue] = textures;
+    batches.push({
+      batchIndex: faceIndex,
+      geometry: mesh.geometry,
+      image: {
+        data: interleaveRgba(red.dataValues, green.dataValues, blue.dataValues),
+        width: red.width,
+        height: red.height,
+        dataRect: red.dataRect,
+      },
+    });
+  }
+  return { batches, bounds: mergeRgbBounds(bounds) };
+}
+
+async function readRgbFaceChannel(
+  read: TRgbChannelRead,
+  range: { start: number; end: number }
+) {
+  const selection = read.selection.slice();
+  selection[selection.length - 1] = zarr.slice(range.start, range.end);
+  const values = castDataVarToFloat32(
+    await fetchHealpixVariableData(selection, read.variable)
+  );
+  const { missingValue, fillValue } = getHealpixMissingAndFillValues(
+    read.datavar
+  );
+  const bounds = decodeVariableDataAndGetBounds(
+    read.datavar,
+    values,
+    missingValue,
+    fillValue,
+    VALUE_TRANSFORMS.LINEAR
+  );
+  return { values, bounds };
+}
+
+function openRgbVariable(variable: string) {
+  return ZarrDataManager.getVariableInfo(
+    ZarrDataManager.getDatasetSource(props.datasources!, varnameSelector.value),
+    variable,
+    props.datasources!.zarr_format
+  );
 }
 
 function healpixHoverLookup(
@@ -734,36 +994,97 @@ function healpixHoverLookup(
   };
 }
 
+// eslint-disable-next-line max-lines-per-function
 async function fetchAndRenderData(
-  datavar: zarr.Array<zarr.DataType, zarr.AsyncReadable>
+  datavar: zarr.Array<zarr.DataType, zarr.AsyncReadable>,
+  isCurrent: () => boolean
 ) {
+  const deferDisplay = store.isStreamlineLayerEnabled();
   const grid = unpackGrid();
 
   const cellCoord = await getCells();
   fitCameraToCells(grid, cellCoord);
   const { dimensionRanges, indices } = await prepareDimensionData(datavar);
-  const result = await processHealpixChunks(datavar, cellCoord, grid, indices);
+  const result = await processHealpixChunks(
+    datavar,
+    cellCoord,
+    grid,
+    indices,
+    deferDisplay,
+    isCurrent
+  );
   if (!result) {
     return;
   }
-  const { dataMin, dataMax, histogramSummaries } = result;
-  setHoverLookup(healpixHoverLookup);
-  updateHistogram(histogramSummaries, dataMin, dataMax);
+  const { dataMin, dataMax, histogramSummaries, textures, batches } = result;
 
   lastStreamlineContext = { indices, grid, cellCoord };
+  lastDatavar = datavar;
+  volume.setContext({
+    dimensionNames: selectedDimensionNames.value,
+    indices,
+    grid: {
+      kind: VOLUME_GRID_TYPES.HEALPIX,
+      nside: grid.nside,
+      cellCoordinates: cellCoord ? Float64Array.from(cellCoord) : undefined,
+      options: {
+        scheme: grid.scheme,
+        level: grid.level,
+        ellipsoid: {
+          // eslint-disable-next-line camelcase
+          semi_major_axis: grid.semiMajorAxis,
+          // eslint-disable-next-line camelcase
+          semi_minor_axis: grid.semiMajorAxis * (1 - grid.flattening),
+        },
+      },
+    },
+  });
 
+  if (!isCurrent()) {
+    return;
+  }
   const dimInfo = await getDimensionValues(dimensionRanges, indices);
 
-  store.updateVarInfo(
-    {
-      attrs: datavar.attrs,
-      dimInfo,
-      bounds: { low: dataMin, high: dataMax },
+  const scalarInfo = {
+    attrs: datavar.attrs,
+    dimInfo,
+    bounds: { low: dataMin, high: dataMax },
+    dimRanges: dimensionRanges,
+  };
+  let geometryPending = deferDisplay;
+  const renderScalar = () => {
+    if (geometryPending) {
+      batches.forEach(updateHealpixBatch);
+      batches.length = 0;
+      geometryPending = false;
+    } else {
+      textures.forEach(updateHealpixTexture);
+    }
+    setHoverLookup(healpixHoverLookup);
+  };
+  if (!isCurrent()) {
+    return;
+  }
+  scalarCache.captureScalar({
+    render: renderScalar,
+    info: scalarInfo,
+    indices: indices as number[],
+    data: histogramSummaries,
+    isCurrent,
+  });
+  await updateStreamlines(lastStreamlineContext);
+  if (isCurrent() && !store.streamlineMagnitudeDisplayed) {
+    await scalarCache.restoreScalar();
+  }
+  if (isCurrent()) {
+    await rgbLayer.setContext({
+      indices,
       dimRanges: dimensionRanges,
-    },
-    indices as number[]
-  );
-  void updateStreamlines(lastStreamlineContext);
+      dimInfo,
+      varname: varnameSelector.value,
+      vars: props.datasources!.levels[0].datasources,
+    });
+  }
 }
 
 onBeforeMount(async () => {

@@ -17,6 +17,16 @@ Everything below was measured, not inferred: the numbers come from probing
 > byte-identical is now **six files, not four** (§6). The survey itself — which
 > codecs decode, which do not, and the test harness — still holds.
 
+> **Updated 2026-11-18, after the v1.8.1 upstream merge (eeholmes/gridlook#27).**
+> `d70-t/gridlook#210` **merged upstream on 2026-09-17**, so P6 is fixed and
+> the six files in §6 are upstream-owned now, identical on both sides; the
+> byte-identical rule is retired and §6 is history. Upstream `f1ce362`
+> (v1.6.0) **converts int64/uint64 to Float32**, which closes P2. Upstream
+> v1.6–v1.8.1 also added Kerchunk reference files (`dd6e18d`), remote NetCDF
+> files (`14a17cf`), masking of a zero `fill_value` (`4bf54fb`) and the CF
+> `actual_range` colour range (`392e7a2`); none changes the codec list in §1,
+> and `codecs.ts` is still identical to upstream's.
+
 ---
 
 ## 1. Where codec support actually comes from
@@ -113,7 +123,12 @@ The useful split is by what a decoder would cost:
 So most of the gap closes with plain JavaScript. Only the last row runs into
 upstream's no-WASM position, and none of those three is common in ESM output.
 
-### P2 — int64/uint64 variables throw an opaque TypeError (medium)
+### P2 — int64/uint64 variables throw an opaque TypeError (medium) — fixed upstream
+
+> **Fixed upstream in `f1ce362` (v1.6.0):** `castDataVarToFloat32` now has a
+> BigInt branch that converts through `Number`, and
+> `tests/unit/lib/data/dataTypeSupport.test.ts` asserts the conversion. Kept
+> below as the original finding.
 
 `castDataVarToFloat32` is `Float32Array.from(rawData)`, which refuses BigInt
 outright. An `int64` data variable produces **"Cannot convert a BigInt value to
@@ -154,7 +169,9 @@ time — a workshop or conference demo on an old machine is the plausible way �
 the answer both sides preferred was a browser-capability check with a pop-up,
 not a special case inside the codec explainer.
 
-### P6 — codec failures surface as "Could not fetch data" (medium)
+### P6 — codec failures surface as "Could not fetch data" (medium) — fixed upstream
+
+> **Fixed by `d70-t/gridlook#210`, merged upstream 2026-09-17.**
 
 Two separate weaknesses:
 
@@ -207,7 +224,7 @@ about where the failing code lives and whether gridlook has a hook to reach it.
 | P1 — `quantize`, `astype`, `packbits`, `crc32`, `adler32` | **gridlook**                  | The registry is the sanctioned extension point, and we already use it three times           |
 | P1 — `numcodecs.fixedscaleoffset` (v3 name)               | **zarrita** (gridlook viable) | zarrita already owns the mapping; duplicating it here means maintaining a second copy       |
 | P1 — `bz2`, `lzma`, `zfpy`                                | **numcodecs.js**              | They need a real decompressor; this is the gap Eli named in d70-t/gridlook#180              |
-| P2 — int64/uint64 variables                               | **gridlook**                  | zarrita is right to return `BigInt64Array`; the render pipeline decides what to do with it  |
+| P2 — int64/uint64 variables (fixed upstream, `f1ce362`)   | **gridlook**                  | zarrita is right to return `BigInt64Array`; the render pipeline decides what to do with it  |
 | P3 — string variables                                     | **gridlook**                  | Same: the data is decoded correctly, the display layer swallows it                          |
 | P4 — object-form `data_type`                              | **zarrita**                   | Crashes inside `open.v3` before gridlook sees anything, and there is no hook for data types |
 | P5 — float16 without `Float16Array`                       | **zarrita**                   | Same reason; gridlook could only polyfill a global, which is worse                          |
@@ -314,7 +331,9 @@ Not implemented. Roughly ascending in cost, with merge surface against upstream:
    `astype` as small pure-JS codecs in new files, with
    `codecs.ts` gaining one `registry.set` line each. Plain JS, no WASM, and
    directly upstreamable — it is the same shape as codecita's `Fletcher32Codec`.
-3. **Handle int64 and string variables explicitly** (P2, P3). Either convert
+3. **Handle int64 and string variables explicitly** (P2, P3). _P2 is done
+   upstream (`f1ce362`); strings remain, and #20 covers them as a default
+   variable._ Either convert
    BigInt properly and reject strings with a clear message, or reject both
    clearly. Touches `castDataVarToFloat32`, which upstream owns — a few lines.
 4. **Checksum codecs** (`crc32`, `adler32`) — small, but no known ESM dataset
@@ -335,6 +354,11 @@ precedent applies: a separate optional package, lazily loaded.
 ---
 
 ## 6. Packaging the error-message change as an upstream PR
+
+> **History.** The PR this section describes, `d70-t/gridlook#210`, merged
+> upstream on 2026-09-17. After the 2026-11-18 merge the six files are
+> identical in fork and upstream and upstream owns them: change them upstream,
+> not here. The byte-identical rule below no longer applies.
 
 Upstream's testing philosophy is not ambiguous, so this is settled rather than
 a judgement call:

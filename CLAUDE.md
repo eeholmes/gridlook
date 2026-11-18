@@ -28,12 +28,14 @@ npm run test           # vitest run (single pass)
 npm run test:watch     # vitest in watch mode
 ```
 
+`npm run dev` is fork-modified to use `vite.jupyter.config.ts`, which sets the JupyterHub proxy `base` (`…/proxy/absolute/3000/`) and host settings when `JUPYTERHUB_SERVICE_PREFIX` is set, and is a no-op elsewhere. Upstream's JupyterHub support (`jupyter/`, `af09ef7`, `f916e68`) is a jupyter-server extension that serves the _built_ viewer, not the Vite dev server, so it does not replace this; checked 2026-11-18.
+
 Run a single test file: `npx vitest run tests/unit/lib/data/gridTypeDetector.test.ts`
 Filter by test name: `npx vitest run -t "detects healpix"`
 
 Tests live in `tests/**/*.test.ts` and run in the `node` environment (see `vite.config.ts`). Shared, non-test helpers go in `tests/helpers/`; `boundaries/ignore` in `eslint.config.js` covers `tests/**` so they do not trip `boundaries/no-unknown-files`. Zarr-reading tests build a synthetic in-memory store as a `Map` and open it with `open.v2`/`open.v3` rather than hitting the network — see `tests/unit/lib/data/logBins.test.ts` for the smallest example. Zarr metadata keys are snake_case, which the `camelcase` rule rejects, so write them as computed keys from a constant map.
 
-Node `>=24.16.0` is required (see `package.json` engines). On this JupyterHub machine Node lives at `~/.local/opt/node-v24.20.0-linux-x64`, symlinked into `~/.local/bin`, which `~/.bashrc` prepends to `PATH`. The home directory persists across hubs, so a "new machine" almost never needs a reinstall — if `npm` appears missing, suspect the shell before reinstalling anything. Login shells (what the JupyterHub terminal spawns) read `~/.bash_profile`, not `~/.bashrc`, so a `~/.bash_profile` that sources `~/.bashrc` is in place to bridge that. Non-interactive tool shells may still miss it, in which case prepend `export PATH="$HOME/.local/opt/node-v24.20.0-linux-x64/bin:$PATH"` explicitly. Husky installs on `npm install`: `pre-commit` runs `lint-staged` (ESLint --fix + Prettier) then `npm run typecheck`; `commit-msg` runs Commitlint.
+Node `>=24.16.0` is required (see `package.json` engines). On this JupyterHub machine Node lives at `~/.local/opt/node-v24.20.0-linux-x64`, symlinked into `~/.local/bin`. The home directory usually persists across hubs, but not always: on 2026-11-18 it was missing on one hub and was reinstalled from the nodejs.org tarball, so if `npm` appears missing, check the shell first and the directory second. Login shells (what the JupyterHub terminal spawns) get `~/.local/bin` on `PATH` from `~/.profile`; there is no `~/.bash_profile`. Non-interactive tool shells may still miss it, in which case prepend `export PATH="$HOME/.local/opt/node-v24.20.0-linux-x64/bin:$PATH"` explicitly. Husky installs on `npm install`: `pre-commit` runs `lint-staged` (ESLint --fix + Prettier) then `npm run typecheck`; `commit-msg` runs Commitlint.
 
 ## Commit Conventions
 
@@ -109,7 +111,7 @@ A codec gridlook cannot decode **never fails at open time**. The store opens, ev
 
 `src/lib/data/codecErrors.ts` turns those failures into a message naming the codec, and `useLog` applies it, so the call sites keep passing their own context strings unchanged. Two constraints if you extend it: the grid data worker flattens errors to a plain string before `postMessage`, so the error class and its fields are gone by the time one reaches the UI — classification must work on message text as well as structure — and anything zarrita puts on `cause` has to be appended explicitly (`flattenErrorMessage`) or it is lost.
 
-`codecErrors.ts`, `tests/unit/lib/data/codecErrors.test.ts`, `src/utils/errorHandling.ts` and `tests/unit/utils/errorHandling.test.ts` are kept **byte-identical** to the copies on the `fix/codec-error-messages` branch proposed upstream. The last two joined the set when upstream review asked for `flattenErrorMessage` to move out of the codec-specific file. Change one and you must change the other, or the next `git merge upstream/main` conflicts. That is also why the test inlines its fixtures rather than using `tests/helpers/zarrStoreFixtures.ts`, which is fork-only.
+`codecErrors.ts`, `errorHandling.ts` and their tests came from `d70-t/gridlook#210`, which merged upstream on 2026-09-17; they are upstream-owned and identical on both sides, so change them upstream rather than here.
 
 ### Value transforms
 

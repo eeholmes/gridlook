@@ -94,7 +94,7 @@ it("leaves streamline vector components untouched", async () => {
   });
 });
 
-it("leaves volume heights untouched", async () => {
+it("leaves volume heights and values untouched", async () => {
   const names = ["clw", "zg"];
   vi.spyOn(ZarrDataManager, "getVariableInfo").mockRejectedValue(
     new Error("No coordinate")
@@ -123,4 +123,5 @@ it("leaves volume heights untouched", async () => {
   const result = await loadVolumeData(datasource, inspected, context, vi.fn());
 
   expect(result.heights).toEqual(new Float32Array([1000, 1000, 0, 0]));
+  expect(result.values).toEqual([new Float32Array([1, 10, 100, 1000])]);
 });

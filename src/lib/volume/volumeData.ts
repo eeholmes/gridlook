@@ -19,8 +19,11 @@ import {
   volumeVerticalDimension,
 } from "@/lib/volume/volumeVariables.ts";
 
-// Coordinates never take the scalar field's value transform.
-function decodeCoordinateLinear(
+// Nothing in a volume takes the scalar field's value transform. Heights and
+// levels are coordinates, and the field itself is a positive density that
+// volumeTexture.ts already log-compresses; log10 first would send values below
+// 1 negative, which it renders as empty (eeholmes/gridlook#29).
+function decodeLinear(
   variable: Parameters<typeof decodeVariableDataAndGetBounds>[0],
   values: Float32Array
 ) {
@@ -164,7 +167,7 @@ async function loadSourceValues(
       onProgress,
     })
   );
-  decodeVariableDataAndGetBounds(source.variable, values);
+  decodeLinear(source.variable, values);
   const expectedLength = source.sourceLevelCount * source.sourceCellCount;
   if (values.length !== expectedLength) {
     throw new Error(
@@ -230,7 +233,7 @@ async function loadHeightValues(
           onProgress,
         })
       );
-      decodeCoordinateLinear(coordinateVariable, values);
+      decodeLinear(coordinateVariable, values);
       if (values.length === source.sourceLevelCount * source.sourceCellCount) {
         return values;
       }
@@ -305,7 +308,7 @@ async function loadVerticalCoordinates(
       selection: [null],
     })
   );
-  decodeCoordinateLinear(coordinate, levels);
+  decodeLinear(coordinate, levels);
   // Place increasing height (or decreasing pressure/depth) outward in the shell.
   if (pressure || positive === "down") {
     for (let index = 0; index < levels.length; index++) {

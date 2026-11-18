@@ -1,4 +1,4 @@
-# Handoff — 2026-11-18 (session 10)
+# Handoff — 2026-11-18 (sessions 10 and 11)
 
 Read this at the start of a new session. Cross-referenced by `CLAUDE.md`.
 
@@ -7,28 +7,34 @@ own document under `claude/` is a pointer, not a retelling.
 
 ## Status
 
-- **`main`** (`dcb5e55`) is in sync with `origin/main`. Nothing is in
-  progress. Session 10 merged the session-9 handoff (PR #26), rechecked the
-  catalog and added the `ocean-icechunks` stores (issue #31, PR #32 — the
-  method and results are in the PR body), and planned the upstream merge as
-  issues #27–#30.
-- **`main` is 158 commits behind `upstream/main`** (`58de946`, v1.8.1,
-  2026-11-18) and 49 ahead; the last merge was `7b2c126` on 2026-09-16. A
-  trial merge conflicts in 10 files. **The merge is planned as four issues, in
-  dependency order:** #27 (the merge itself, plus the fixes that must ride with
-  it), then #28 (extended catalog fields → upstream `tags`) and #29 (value
-  transform on volumes), then #30 (docs cleanup). Each issue carries its own
-  detail. Keep the gap small: the fork is a staging area for work meant to go
-  upstream, not a variant, so merging upstream is routine maintenance rather
-  than an event.
-- **The fork's whole delta is 36 files under `src/` and `tests/`**: 14
-  fork-only files and 22 edits to upstream-owned files totalling about 194
-  added lines, the largest being 37 lines in `src/ui/overlays/Controls.vue`.
+- **The v1.8.1 upstream merge is written and waiting on Eli's review
+  (session 11).** Four PRs, one per issue. #34 is the merge itself (#27). It
+  targets `main`. **#35** (#28, catalog fields → `tags`), **#36** (#29, the
+  volume field stays linear) and **#37** (#30, docs) are each stacked on
+  #34's branch `chore/merge-upstream-v1.8.1`. **Merge #34 first.** GitHub
+  then retargets the other three to `main`. Each PR body says what was and
+  was not tested. None was opened in a browser. Lint, typecheck, `npm run knip`,
+  the tests and the build pass on all four, and CI is green on #34.
+- **Until #34 merges, `main` (`dcb5e55`) is 158 commits behind
+  `upstream/main`** (`58de946`, v1.8.1). Keep the gap small: the fork is a
+  staging area for work meant to go upstream, not a variant, so merging
+  upstream is routine maintenance rather than an event.
+- **Things the merge settled that a later session would trip on.** The new
+  linear call sites, and why volumes are among them, are in `CLAUDE.md` under
+  Value transforms. `CatalogPanelExtended.vue` is gone: the fork's default
+  catalog now uses upstream `tags` (`docs/catalogs-extended.md`).
+  `vite.jupyter.config.ts` is still needed (`CLAUDE.md`, Commands).
+  - **Not done:** the derived vector magnitude is computed from linear
+    components and is never log10'd, so it is shown linear, with linear
+    units, even when log10 is selected. #34 explains this, and no issue
+    exists for it.
+- **After #34 the fork's delta is 31 files under `src/` and `tests/`** (11
+  fork-only, 20 edits to upstream files). Before it was 36 (14 and 22). #35
+  removes the fork's edits to `CatalogPanel.vue` and `catalog.ts` entirely.
   That number is the thing to keep small.
-- **Open issues:** #1, #13 (shelved), #14, #15, #16, #17, #20, #21, #27–#30.
-  **Closed:** #2, #4, #5, #7, #10, #12, #31. **PRs #3, #6, #8, #9, #11, #18,
-  #19, #22, #23, #26 and #32 are merged; none are open** other than this
-  handoff's own.
+- **Open issues:** #1, #13 (shelved), #14, #15, #16, #17, #20, #21, #25
+  (deck-gl, never triaged), #27–#30 (until their PRs merge). **Open PRs:**
+  #33 (this handoff) and #34–#37.
 - An empty `fix/all-nan-notice` branch was created for #17 in session 7 and
   never used; it was deleted in session 8. **No work has started on #17.**
 
@@ -56,9 +62,7 @@ were opened as pull requests on `d70-t/gridlook`.
 | ~~`fix/colormap-swatch-base-url`~~ | `d70-t/gridlook#211` | **Merged upstream 2026-08-28**, and on `main` here via PR #11. The branch was deleted locally and on `origin` on 2026-09-16; nothing is left to do. |
 | `fix/codec-error-messages`         | `d70-t/gridlook#210` | **Merged upstream 2026-09-17.** Its files on `upstream/main` are identical to the fork's (checked 2026-11-18), so they merge cleanly in #27.        |
 
-The **byte-identical rule** in `CLAUDE.md` and `claude/codec-support.md` §6 is
-therefore obsolete: those files are upstream-owned now. Dropping it is part of
-#30.
+The **byte-identical rule** is retired in #37: those files are upstream-owned now.
 
 ### Reviews we gave upstream
 
@@ -205,10 +209,9 @@ gone; the PR body describes it well enough to rebuild.
 
 ## How to resume
 
-Nothing is in flight. The shortlist, most-ready first:
+**In flight:** PRs #34–#37, the upstream merge, waiting on Eli's review and
+go-ahead to merge. #34 goes first. The shortlist after that, most-ready first:
 
-0. **#27, the upstream merge**, then #28/#29, then #30. Eli wanted it lined up;
-   she had not started it when session 10 ended.
 1. **#17, then #20 and #21** — the "say what happened instead of drawing a
    blank" trio from the catalog audit. #17 establishes the notice mechanism the
    other two reuse, so it goes first.

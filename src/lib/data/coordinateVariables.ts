@@ -614,7 +614,8 @@ function latPriority(name: string) {
 function resolveLatLonFromCoordinates(
   variable: string,
   datavar: zarr.Array<zarr.DataType, zarr.AsyncReadable>,
-  isRotated: boolean
+  isRotated: boolean,
+  sources: TSources["levels"][0]["datasources"]
 ): TLatLonNames {
   const coordinates = isRotated
     ? "rlon rlat"
@@ -623,13 +624,25 @@ function resolveLatLonFromCoordinates(
   let longitudeName: string | null = null;
   if (coordinates) {
     for (const coordName of coordinates.split(" ")) {
+      const path = ZarrDataManager.resolveVariablePath(variable, coordName);
+      const attrs = sources[path]?.attrs;
       if (isLatitudeName(coordName)) {
-        latitudeName = ZarrDataManager.resolveVariablePath(variable, coordName);
+        latitudeName = path;
       } else if (isLongitudeName(coordName)) {
-        longitudeName = ZarrDataManager.resolveVariablePath(
-          variable,
-          coordName
-        );
+        longitudeName = path;
+      } else if (
+        latitudeName === null &&
+        isLatitudeVariable(coordName, attrs)
+      ) {
+        // CF auxiliary coordinates with a suffix, e.g. ROMS lat_rho, lat_psi:
+        // the data variable names the right one, so don't fall back to
+        // whichever lat-like variable happens to come first.
+        latitudeName = path;
+      } else if (
+        longitudeName === null &&
+        isLongitudeVariable(coordName, attrs)
+      ) {
+        longitudeName = path;
       }
     }
   } else {
@@ -697,7 +710,8 @@ function findLatLonNames(
   let { latitudeName, longitudeName } = resolveLatLonFromCoordinates(
     variable,
     datavar,
-    isRotated
+    isRotated,
+    datasources.levels[0].datasources
   );
 
   // (re-)assign lat/lon names from sources using priority ordering:

@@ -583,6 +583,15 @@ export function isLatitudeName(name: string) {
   );
 }
 
+// CF identifies latitude/longitude variables by units or standard_name.
+function hasStandardName(attrs: unknown, standardName: string) {
+  return (
+    typeof attrs === "object" &&
+    attrs !== null &&
+    (attrs as { standard_name?: unknown }).standard_name === standardName
+  );
+}
+
 function lonPriority(name: string) {
   const variableName = getVariableLocalName(name);
   if (variableName === "rlon") {
@@ -632,7 +641,8 @@ function resolveLatLonFromCoordinates(
         longitudeName = path;
       } else if (
         latitudeName === null &&
-        isLatitudeVariable(coordName, attrs)
+        (isLatitudeVariable(coordName, attrs) ||
+          hasStandardName(attrs, "latitude"))
       ) {
         // CF auxiliary coordinates with a suffix, e.g. ROMS lat_rho, lat_psi:
         // the data variable names the right one, so don't fall back to
@@ -640,7 +650,8 @@ function resolveLatLonFromCoordinates(
         latitudeName = path;
       } else if (
         longitudeName === null &&
-        isLongitudeVariable(coordName, attrs)
+        (isLongitudeVariable(coordName, attrs) ||
+          hasStandardName(attrs, "longitude"))
       ) {
         longitudeName = path;
       }

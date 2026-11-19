@@ -73,3 +73,33 @@ it("uses the suffixed coordinates named by the coordinates attribute", async () 
   expect(loaded).not.toContain("lat_psi");
   expect(loaded).not.toContain("lon_psi");
 });
+
+it("recognises suffixed coordinates by standard_name when units are absent", async () => {
+  const named = {
+    ...sources,
+    levels: [
+      {
+        ...sources.levels[0],
+        datasources: {
+          geolat_u: { attrs: { standard_name: "latitude" } },
+          geolat_t: { attrs: { standard_name: "latitude" } },
+          geolon_u: { attrs: { standard_name: "longitude" } },
+          geolon_t: { attrs: { standard_name: "longitude" } },
+        },
+      },
+    ],
+  } as unknown as TSources;
+  const tracer = {
+    attrs: { coordinates: "geolon_t geolat_t" },
+    dimensionNames: ["time", "y", "x"],
+  } as unknown as zarr.Array<zarr.DataType, zarr.AsyncReadable>;
+
+  await getLatLonData("thetao", tracer, named);
+
+  const loaded = vi
+    .mocked(ZarrDataManager.getVariableInfo)
+    .mock.calls.map(([, name]) => name);
+  expect(loaded).toContain("geolat_t");
+  expect(loaded).toContain("geolon_t");
+  expect(loaded).not.toContain("lat");
+});
